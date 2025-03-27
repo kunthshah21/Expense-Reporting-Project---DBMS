@@ -57,5 +57,3 @@ Below is an overview of the project structure along with a description of what e
    ```bash
    python -m venv venv
    source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-   test - by kalash
