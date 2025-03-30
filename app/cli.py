@@ -19,18 +19,38 @@ def process_command(cmd):
     cmd_type = parts[0].lower()
     
     try:
-        if cmd_type == 'login' and len(parts) == 3:
+        if cmd_type == 'help':
+            show_help()
+        elif cmd_type == 'login' and len(parts) == 3:
             commands.login(parts[1], parts[2])
         elif cmd_type == 'logout':
             commands.logout()
-        elif cmd_type == 'add_user' and len(parts) == 4:
-            commands.add_user(parts[1], parts[2], parts[3])
+        elif cmd_type == 'add_user':
+            if len(parts) == 4:
+                commands.add_user(parts[1], parts[2], parts[3])
+            elif len(parts) == 6:
+                commands.add_user(parts[1], parts[2], parts[3], parts[4], parts[5])
+            else:
+                print("Invalid command format. Use 'add_user <username> <password> <role> [email] [phone]'")
         elif cmd_type == 'add_expense' and len(parts) >= 6:
-            tags = parts[5] if len(parts) > 5 else ''
+            # Updated to work with timestamp instead of date
+            tags = parts[6] if len(parts) > 6 else ''
             commands.add_expense(float(parts[1]), parts[2], parts[3], parts[4], parts[5], tags)
-        # Add other command handlers
+        elif cmd_type == 'list_users':
+            commands.list_users()
+        elif cmd_type == 'create_group' and len(parts) >= 2:
+            description = parts[2] if len(parts) > 2 else None
+            commands.create_group(parts[1], description)
+        elif cmd_type == 'add_user_to_group' and len(parts) == 3:
+            commands.add_user_to_group(parts[1], parts[2])
+        elif cmd_type == 'add_group_expense' and len(parts) >= 7:
+            # Format: add_group_expense <group_name> <amount> <category> <payment> <timestamp> <desc> [splits]
+            splits = parts[7] if len(parts) > 7 else None
+            commands.add_group_expense(parts[1], float(parts[2]), parts[3], parts[4], parts[5], parts[6], splits)
+        elif cmd_type == 'report_category' and len(parts) == 2:
+            commands.report_category_spending(parts[1])
         else:
-            print("Invalid command. Use 'help'.")
+            print("Invalid command. Use 'help' to see available commands.")
     except Exception as e:
         print(f"Error: {e}")
 
@@ -39,9 +59,16 @@ def show_help():
     Commands:
     - login <username> <password>
     - logout
-    - add_user <username> <password> <role> (Admin only)
-    - add_expense <amount> <category> <payment> <date> <desc> [tags]
+    - add_user <username> <password> <role> [email] [phone]
+    - add_expense <amount> <category> <payment> <timestamp> <desc> [tags]
+    - list_users
+    - create_group <name> [description]
+    - add_user_to_group <username> <group_name>
+    - add_group_expense <group_name> <amount> <category> <payment> <timestamp> <desc> [splits]
+    - report_category <category>
     - exit
+    
+    Note: For group expense splits, use format "user1:amount1,user2:amount2"
     """)
 
 if __name__ == "__main__":
