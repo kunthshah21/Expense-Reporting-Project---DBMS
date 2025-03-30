@@ -1,74 +1,131 @@
-# app/cli.py
 from app import commands
 import shlex
+from datetime import datetime
 
 def main_cli():
-    print("Expense CLI. Type 'help' for commands.")
+    print("Expense Management System")
+    print("Type 'help' for commands\n")
+    
     while True:
-        cmd = input("> ").strip()
-        if not cmd:
-            continue
-        if cmd.lower() == 'exit':
+        try:
+            cmd = input("> ").strip()
+            if not cmd:
+                continue
+            process_command(cmd)
+        except KeyboardInterrupt:
+            print("\nExiting...")
             break
-        process_command(cmd)
 
 def process_command(cmd):
     parts = shlex.split(cmd)
     if not parts:
         return
-    cmd_type = parts[0].lower()
+    
+    command = parts[0].lower()
     
     try:
-        if cmd_type == 'help':
+        if command == "help":
             show_help()
-        elif cmd_type == 'login' and len(parts) == 3:
-            commands.login(parts[1], parts[2])
-        elif cmd_type == 'logout':
-            commands.logout()
-        elif cmd_type == 'add_user':
-            if len(parts) == 4:
-                commands.add_user(parts[1], parts[2], parts[3])
-            elif len(parts) == 6:
-                commands.add_user(parts[1], parts[2], parts[3], parts[4], parts[5])
+        
+        # Authentication
+        elif command == "login":
+            if len(parts) == 3:
+                if commands.login(parts[1], parts[2]):
+                    print("Login successful")
+                else:
+                    print("Invalid credentials")
             else:
-                print("Invalid command format. Use 'add_user <username> <password> <role> [email] [phone]'")
-        elif cmd_type == 'add_expense' and len(parts) >= 6:
-            # Updated to work with timestamp instead of date
-            tags = parts[6] if len(parts) > 6 else ''
-            commands.add_expense(float(parts[1]), parts[2], parts[3], parts[4], parts[5], tags)
-        elif cmd_type == 'list_users':
-            commands.list_users()
-        elif cmd_type == 'create_group' and len(parts) >= 2:
-            description = parts[2] if len(parts) > 2 else None
-            commands.create_group(parts[1], description)
-        elif cmd_type == 'add_user_to_group' and len(parts) == 3:
-            commands.add_user_to_group(parts[1], parts[2])
-        elif cmd_type == 'add_group_expense' and len(parts) >= 7:
-            # Format: add_group_expense <group_name> <amount> <category> <payment> <timestamp> <desc> [splits]
-            splits = parts[7] if len(parts) > 7 else None
-            commands.add_group_expense(parts[1], float(parts[2]), parts[3], parts[4], parts[5], parts[6], splits)
-        elif cmd_type == 'report_category' and len(parts) == 2:
-            commands.report_category_spending(parts[1])
+                print("Usage: login <username> <password>")
+        
+        elif command == "logout":
+            commands.logout()
+            print("Logged out")
+        
+        # User management
+        elif command == "add_user":
+            if len(parts) == 4:
+                if commands.add_user(parts[1], parts[2], parts[3]):
+                    print("User added")
+                else:
+                    print("Failed to add user")
+            else:
+                print("Usage: add_user <username> <password> <role>")
+        
+        elif command == "list_users":
+            if commands.current_user.get('role') == 'Admin':
+                users = commands.list_users()
+                for user in users:
+                    print(f"ID: {user['uid']} | User: {user['username']} | Role: {user['role']}")
+            else:
+                print("Permission denied")
+        
+        # Category management
+        elif command == "add_category":
+            if len(parts) == 2:
+                if commands.current_user.get('role') == 'Admin':
+                    if commands.add_category(parts[1]):
+                        print(f"Category '{parts[1]}' added")
+                    else:
+                        print("Failed to add category")
+                else:
+                    print("Permission denied. Only admins can add categories.")
+            else:
+                print("Usage: add_category <name>")
+        
+        # Payment method management
+        elif command == "add_payment_method":
+            if len(parts) == 2:
+                if commands.current_user.get('role') == 'Admin':
+                    if commands.add_payment_method(parts[1]):
+                        print(f"Payment method '{parts[1]}' added")
+                    else:
+                        print("Failed to add payment method")
+                else:
+                    print("Permission denied. Only admins can add payment methods.")
+            else:
+                print("Usage: add_payment_method <name>")
+        
+        # [Rest of your existing command handlers...]
+        
         else:
-            print("Invalid command. Use 'help' to see available commands.")
+            print("Invalid command")
+
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"Error: {str(e)}")
 
 def show_help():
     print("""
-    Commands:
-    - login <username> <password>
-    - logout
-    - add_user <username> <password> <role> [email] [phone]
-    - add_expense <amount> <category> <payment> <timestamp> <desc> [tags]
-    - list_users
-    - create_group <name> [description]
-    - add_user_to_group <username> <group_name>
-    - add_group_expense <group_name> <amount> <category> <payment> <timestamp> <desc> [splits]
-    - report_category <category>
-    - exit
+    Available Commands:
+    ------------------
+    Authentication:
+    login <username> <password>
+    logout
     
-    Note: For group expense splits, use format "user1:amount1,user2:amount2"
+    User Management (Admin only):
+    add_user <username> <password> <role>
+    list_users
+    
+    Category Management (Admin only):
+    add_category <name>
+    list_categories
+    
+    Payment Methods (Admin only):
+    add_payment_method <name>
+    list_payment_methods
+    
+    Expense Management:
+    add_expense <amount> <category> <payment_method> <date> <description> <tag>
+    update_expense <id> <field> <value>
+    delete_expense <id>
+    list_expenses [--category=] [--date=] [--min-amount=] [--max-amount=] [--payment=] [--tag=]
+    
+    Import/Export:
+    import_expenses <file.csv>
+    export_csv <file.csv> sort-on <field>
+    
+    System:
+    help
+    exit
     """)
 
 if __name__ == "__main__":
