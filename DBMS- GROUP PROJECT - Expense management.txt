@@ -1,0 +1,129 @@
+﻿Entities
+1. User
+* Uid
+* Role
+* Email Address
+* Phone Number
+
+
+2. Payment Method 
+* Pid
+* Method
+
+
+3. Categories 
+* Cid
+* Category Name
+
+
+4. Tag
+* Tid
+* Tag Name
+
+
+5. User Expenses
+* Eid
+* Uid
+* Date
+* Amount 
+* Time 
+* Cid 
+* Description 
+* Pid
+
+
+6. User group 
+* Gid
+* Uid
+
+
+7. Group expense
+* Geid
+* Debtor id - uid
+* Date 
+* Amount 
+* Pid
+* tag
+        
+8. Group 
+* Gid
+* Date created 
+* Gname
+* description
+
+
+9. Split users
+* Geid
+* Uid
+* Status
+* Split
+
+
+10. Expense tag
+* Eid 
+* Tid
+
+
+
+
+
+
+
+
+ Define Relations
+
+
+
+
+1. RelationName: UserPaymentMethod
+User <pays through> Payment Method, Attributes: Uid, Pid
+Relationship: Many to Many
+
+
+   2.  RelationName: UserExpense
+Between: User, Payment Method, and Categories
+Attributes: Uid, Eid, Date, Amount, Time, Cid, Description, Pid
+Relationship: One to Many
+
+        Or (If expense is made as a separate entity)
+        RelationName: UserExpense
+        User <made> Expense, Attributes: Uid, Eid
+        Relationship: One to Many
+
+        RelationName: ExpenseCategory
+        Expense <belongs to> Category, Attributes: Eid, Cid
+        Relationship: One to Many
+
+        RelationName: ExpensePaymentMethod
+        Expense <paid through> Payment Method, Attributes: Eid, Pid
+        Relationship: One to Many
+
+      3. RelationName: ExpenseTag
+Expense <made for> Tag, Attributes: Eid, Tid
+Relationship: Many to Many
+
+
+         4. RelationName: UserGroup
+User <belongs to>Group, Attributes: Uid, Gid
+Relationship: Many to Many
+
+
+            5. RelationName: GroupExpenseTag
+GroupExpense <made for> Tag, Attributes: Geid, Tid
+Relationship: Many to Many
+
+
+               6. RelationName: GroupExpensePaymentMethod
+GroupExpense <paid through> Payment Method, Attributes: Geid, Pid
+Relationship: One to Many
+
+
+                  7. (Optional)
+RelationName: GroupExpenseCategory
+GroupExpense <belongs to> Category, Attributes: Geid, Cid
+Relationship: One to Many
+
+
+                     8. RelationName: SplitUsers
+GroupExpense <split between> User, Attributes: Geid, Uid
+Relationship: Many to Many
