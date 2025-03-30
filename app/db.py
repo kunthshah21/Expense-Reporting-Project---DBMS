@@ -11,41 +11,118 @@ def get_db_connection():
 def initialize_db(conn):
     cursor = conn.cursor()
     print("Creating tables...")
-    # Example: Create a table for users
+    
+    # Enable foreign keys
+    cursor.execute("PRAGMA foreign_keys = ON")
+    
+    # Create Users table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT NOT NULL UNIQUE,
-            password TEXT NOT NULL,
-            role TEXT NOT NULL
+            uid INTEGER PRIMARY KEY AUTOINCREMENT,
+            role TEXT NOT NULL,
+            email TEXT NOT NULL UNIQUE,
+            phone TEXT
         )
     """)
-    # Create table for expense categories
+    
+    # Create Payment Methods table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS payment_methods (
+            pid INTEGER PRIMARY KEY AUTOINCREMENT,
+            method TEXT NOT NULL UNIQUE
+        )
+    """)
+    
+    # Create Categories table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS categories (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cid INTEGER PRIMARY KEY AUTOINCREMENT,
             category_name TEXT NOT NULL UNIQUE
         )
     """)
-    # Create table for payment methods
+    
+    # Create Tags table
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS payment_methods (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            method_name TEXT NOT NULL UNIQUE
+        CREATE TABLE IF NOT EXISTS tags (
+            tid INTEGER PRIMARY KEY AUTOINCREMENT,
+            tag_name TEXT NOT NULL UNIQUE
         )
     """)
-    # Create table for expenses
+    
+    # Create User Expenses table
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS expenses (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+        CREATE TABLE IF NOT EXISTS user_expenses (
+            eid INTEGER PRIMARY KEY AUTOINCREMENT,
+            uid INTEGER NOT NULL,
+            date DATE NOT NULL,
             amount REAL NOT NULL,
-            category_id INTEGER,
-            payment_method_id INTEGER,
-            date TEXT,
+            time TIME,
+            cid INTEGER NOT NULL,
             description TEXT,
-            tag TEXT,
-            FOREIGN KEY (category_id) REFERENCES categories(id),
-            FOREIGN KEY (payment_method_id) REFERENCES payment_methods(id)
+            pid INTEGER NOT NULL,
+            FOREIGN KEY (uid) REFERENCES users(uid),
+            FOREIGN KEY (cid) REFERENCES categories(cid),
+            FOREIGN KEY (pid) REFERENCES payment_methods(pid)
         )
     """)
+    
+    # Create Groups table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS groups (
+            gid INTEGER PRIMARY KEY AUTOINCREMENT,
+            date_created DATE NOT NULL,
+            gname TEXT NOT NULL,
+            description TEXT
+        )
+    """)
+    
+    # Create User Group (many-to-many relationship)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS user_group (
+            gid INTEGER NOT NULL,
+            uid INTEGER NOT NULL,
+            PRIMARY KEY (gid, uid),
+            FOREIGN KEY (gid) REFERENCES groups(gid),
+            FOREIGN KEY (uid) REFERENCES users(uid)
+        )
+    """)
+    
+    # Create Group Expense table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS group_expense (
+            geid INTEGER PRIMARY KEY AUTOINCREMENT,
+            debtor_id INTEGER NOT NULL,
+            date DATE NOT NULL,
+            amount REAL NOT NULL,
+            pid INTEGER NOT NULL,
+            tag TEXT,
+            FOREIGN KEY (debtor_id) REFERENCES users(uid),
+            FOREIGN KEY (pid) REFERENCES payment_methods(pid)
+        )
+    """)
+    
+    # Create Split Users table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS split_users (
+            geid INTEGER NOT NULL,
+            uid INTEGER NOT NULL,
+            status TEXT NOT NULL,
+            split REAL NOT NULL,
+            PRIMARY KEY (geid, uid),
+            FOREIGN KEY (geid) REFERENCES group_expense(geid),
+            FOREIGN KEY (uid) REFERENCES users(uid)
+        )
+    """)
+    
+    # Create Expense Tag (many-to-many relationship)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS expense_tag (
+            eid INTEGER NOT NULL,
+            tid INTEGER NOT NULL,
+            PRIMARY KEY (eid, tid),
+            FOREIGN KEY (eid) REFERENCES user_expenses(eid),
+            FOREIGN KEY (tid) REFERENCES tags(tid)
+        )
+    """)
+    
     conn.commit()
