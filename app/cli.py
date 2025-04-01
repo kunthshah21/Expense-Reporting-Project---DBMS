@@ -109,18 +109,27 @@ def process_command(cmd):
             else:
                 print("Usage: add_payment_method <name>")
         
-                # Payment method management
                 
+        # add_expense         
         elif command == "add_expense":
-            #add_expense(amount, category, payment_method, date, description, tags)
             if len(parts) >= 6:
-                if commands.add_expense(parts[1], parts[2].strip().lower(), parts[3].strip().lower(), parts[4], parts[5], parts[6:]):
+                amount = parts[1]
+                category = parts[2].strip().lower()
+                payment_method = parts[3].strip().lower()
+                date = parts[4]
+                description = parts[5]
+
+                # Handle tags as comma-separated values
+                tags = []
+                if len(parts) > 6:
+                    tags = [tag.strip() for tag in ",".join(parts[6:]).split(",") if tag.strip()]
+
+                if commands.add_expense(amount, category, payment_method, date, description, tags):
                     print("Expense added successfully.")
                 else:
                     print("Failed to add the expense!")
-                    print("Usage: add_expense <amount> <category> <payment_method> <date> <description> <list_of_tags (seperated by space)> ")
             else:
-                print("Usage: add_expense <amount> <category> <payment_method> <date> <description> <list_of_tags (seperated by space)> ")
+                print("Usage: add_expense <amount> <category> <payment_method> <date> <description> <list_of_tags (comma-separated)>")
 
         # Input format: add_tag <tag_name>
         elif command == "add_tag":
@@ -155,16 +164,36 @@ def process_command(cmd):
             else:
                 print("Usage: add_group <group_name> <description>")
 
-        # Input format: add_group_expense <amount> <group_name> <category> <payment_method> <date> <description> <list_of_tags>
+        #add group expense
         elif command == "add_group_expense":
             if len(parts) >= 7:
-                if commands.add_group_expense(parts[1], parts[2], parts[3], parts[4], parts[5], parts[6], parts[7:]):
+                # Extract required parameters
+                amount = parts[1]
+                group_name = parts[2]
+                category = parts[3]
+                payment_method = parts[4]
+                date = parts[5]
+                description = parts[6]
+
+                # Handle tags and split users
+                tags = []
+                split_usernames = []
+
+                if "|" in parts[7]:  # Check if both lists are provided
+                    tag_part, user_part = parts[7].split("|", 1)
+                    tags = [tag.strip() for tag in tag_part.split(",") if tag.strip()]
+                    split_usernames = [user.strip() for user in user_part.split(",") if user.strip()]
+                else:
+                    tags = [tag.strip() for tag in parts[7].split(",") if tag.strip()]  # Only tags provided
+
+                # Call the function with parsed arguments
+                if commands.add_group_expense(amount, group_name, category, payment_method, date, description, tags, split_usernames):
                     print("Group expense added successfully.")
                 else:
                     print("Failed to add group expense.")
             else:
-                print("Usage: add_group_expense <amount> <group_name> <category> <payment_method> <date> <description> <list_of_tags>")
-        
+                print("Usage: add_group_expense <amount> <group_name> <category> <payment_method> <date> <description> <comma-separated-tags> | <comma-separated-usernames>")
+
         # Command: Add User to Group
         # Usage: add_user_to_group <username> <group_name>
         elif command == "add_user_to_group":
@@ -175,8 +204,6 @@ def process_command(cmd):
                     print("Failed to add user to group.")
             else:
                 print("Usage: add_user_to_group <username> <group_name>")
-
-        
         
         else:
             print("Invalid command")
@@ -212,7 +239,7 @@ def show_help():
     
     Group commands: 
     add_group <group_name> <description>
-    add_group_expense <amount> <group_name> <category> <payment_method> <date> <description> <list_of_tags>
+    add_group_expense add_group_expense <amount> <group_name> <category> <payment_method> <date> <description> <comma-separated-tags> | <comma-separated-usernames>
     
           
     Import/Export:

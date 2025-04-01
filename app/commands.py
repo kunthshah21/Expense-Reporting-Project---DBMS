@@ -290,20 +290,45 @@ def create_group(group_name, description):
 
 def add_user_to_group(username, group_name):
     try:
+        # Check if current_user is logged in
+        if not current_user or not current_user.get('uid'):
+            print("Access denied: No user logged in.")
+            return False
+        
         conn = get_db_connection()
-        uid = conn.execute("SELECT uid FROM users WHERE username = ?", (username,)).fetchone()
-        gid = conn.execute("SELECT gid FROM groups WHERE group_name = ?", (group_name,)).fetchone()
+        cursor = conn.cursor()
+
+        # Get user ID and group ID
+        uid = cursor.execute("SELECT uid FROM users WHERE username = ?", (username,)).fetchone()
+        gid = cursor.execute("SELECT gid FROM groups WHERE group_name = ?", (group_name,)).fetchone()
 
         if not uid or not gid:
             print("User or Group not found.")
             return False
 
-        conn.execute("INSERT INTO user_group (uid, gid) VALUES (?, ?)", (uid[0], gid[0]))
+        uid, gid = uid[0], gid[0]
+
+        # Check if the group is empty
+        user_count = cursor.execute("SELECT COUNT(*) FROM user_group WHERE gid = ?", (gid,)).fetchone()[0]
+
+        if user_count > 0:
+            # If the group is not empty, check if current_user is in the group
+            user_in_group = cursor.execute("SELECT 1 FROM user_group WHERE uid = ? AND gid = ?", 
+                                           (current_user['uid'], gid)).fetchone()
+            
+            if not user_in_group:
+                print("Access denied: Only group members can add new users.")
+                return False
+
+        # Add the user to the group
+        cursor.execute("INSERT INTO user_group (uid, gid) VALUES (?, ?)", (uid, gid))
         conn.commit()
         return True
+
     except sqlite3.IntegrityError:
         print(f"User '{username}' is already in group '{group_name}'.")
         return False
+
     finally:
         conn.close()
 
@@ -322,44 +347,76 @@ def delete_group(group_name):
 #endregion
 
 
-#region Group Expense Management
-def add_group_expense(amount, group_name, category, payment_method, description, tags):
+def add_group_expense(amount, group_name, category, payment_method, description, tags, split_usernames):
     try:
         conn = get_db_connection()
-        gid = conn.execute("SELECT gid FROM groups WHERE group_name = ?", (group_name,)).fetchone()
-        cid = conn.execute("SELECT cid FROM categories WHERE category_name = ?", (category,)).fetchone()
-        pid = conn.execute("SELECT pid FROM payment_methods WHERE method = ?", (payment_method,)).fetchone()
+        cursor = conn.cursor()
+
+        # Get group ID, category ID, and payment method ID
+        gid = cursor.execute("SELECT gid FROM groups WHERE group_name = ?", (group_name,)).fetchone()
+        cid = cursor.execute("SELECT cid FROM categories WHERE category_name = ?", (category,)).fetchone()
+        pid = cursor.execute("SELECT pid FROM payment_methods WHERE method = ?", (payment_method,)).fetchone()
 
         if not gid or not cid or not pid:
             print("Invalid group, category, or payment method.")
             return False
 
-        cursor = conn.cursor()
+        gid, cid, pid = gid[0], cid[0], pid[0]
+
+        # Add expense to group_expenses table
         cursor.execute(
             "INSERT INTO group_expenses (gid, d_uid, amount, cid, pid, date, description) VALUES (?, ?, ?, ?, ?, date('now'), ?)",
-            (gid[0], current_user['uid'], amount, cid[0], pid[0], description)
+            (gid, current_user['uid'], amount, cid, pid, description)
         )
-        geid = cursor.lastrowid
+        geid = cursor.lastrowid  # Get the newly inserted expense ID
 
-        # Handle tags
+        # Add tags to the expense
         for tag in tags:
-            tag_result = conn.execute("SELECT tid FROM tags WHERE tag_name = ?", (tag.strip().lower(),)).fetchone()
+            tag_result = cursor.execute("SELECT tid FROM tags WHERE tag_name = ?", (tag.strip().lower(),)).fetchone()
             if not tag_result:
-                conn.execute("INSERT INTO tags (tag_name) VALUES (?)", (tag.strip().lower(),))
-                tid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+                cursor.execute("INSERT INTO tags (tag_name) VALUES (?)", (tag.strip().lower(),))
+                tid = cursor.lastrowid
             else:
                 tid = tag_result[0]
-            conn.execute("INSERT INTO group_expense_tags (geid, tid) VALUES (?, ?)", (geid, tid))
+            cursor.execute("INSERT INTO group_expense_tags (geid, tid) VALUES (?, ?)", (geid, tid))
+
+        # Add users to the split_users table (including the expense creator)
+        split_usernames.append(current_user['username'])  # Ensure the expense creator is included
+        unique_usernames = list(set(split_usernames))  # Remove duplicates if any
+
+        # Fetch UIDs for all users
+        user_ids = []
+        for username in unique_usernames:
+            uid_result = cursor.execute("SELECT uid FROM users WHERE username = ?", (username,)).fetchone()
+            if uid_result:
+                user_ids.append(uid_result[0])
+            else:
+                print(f"Warning: User '{username}' not found, skipping.")
+
+        if not user_ids:
+            print("Error: No valid users found to split the expense.")
+            return False
+
+        # Calculate split amount
+        split_amount = amount / len(user_ids)
+
+        # Insert split details into split_users table
+        for uid in user_ids:
+            cursor.execute(
+                "INSERT INTO split_users (geid, uid, split_amount) VALUES (?, ?, ?)",
+                (geid, uid, split_amount)
+            )
 
         conn.commit()
-        print(f"Group expense added to '{group_name}'.")
+        print(f"Group expense added to '{group_name}' and split among {len(user_ids)} users.")
         return True
+
     except Exception as e:
         print(f"Error adding group expense: {str(e)}")
         return False
+
     finally:
         conn.close()
-#endregion
 
 
 #region User Management Updates
