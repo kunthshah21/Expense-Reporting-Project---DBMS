@@ -540,52 +540,128 @@ def delete_user(username):
         conn.close()
 #endregion
 
-#region Import/Export
+# region Import/Export
 def import_expenses(file_path):
     try:
+        if not current_user.get('uid'):
+            print("You must be logged in to import expenses")
+            return False
+
+        conn = get_db_connection()
+        imported_count = 0
+
         with open(file_path, 'r') as f:
             reader = csv.DictReader(f)
-            for row in reader:
-                add_expense(
-                    float(row['amount']),
-                    row['category'],
-                    row['payment_method'],
-                    row['date'],
-                    row['description'],
-                    row['tag']
-                )
+            for row_num, row in enumerate(reader, 1):
+                try:
+                    # Validate required fields
+                    required_fields = ['amount', 'category', 'payment_method', 'date']
+                    if not all(field in row for field in required_fields):
+                        print(f"Row {row_num}: Missing required fields")
+                        continue
+
+                    # Convert data types
+                    amount = float(row['amount'])
+                    date = datetime.strptime(row['date'], '%Y-%m-%d').date()
+                    category = row['category'].strip().lower()
+                    payment_method = row['payment_method'].strip().lower()
+                    description = row.get('description', '')
+                    tags = [tag.strip() for tag in row.get('tag', '').split(',') if tag.strip()]
+
+                    # Check category exists
+                    category_id = conn.execute("""
+                        SELECT cid FROM categories 
+                        WHERE category_name = ?
+                    """, (category,)).fetchone()
+                    if not category_id:
+                        print(f"Row {row_num}: Invalid category '{category}'")
+                        continue
+
+                    # Check payment method exists
+                    payment_id = conn.execute("""
+                        SELECT pid FROM payment_methods 
+                        WHERE method = ?
+                    """, (payment_method,)).fetchone()
+                    if not payment_id:
+                        print(f"Row {row_num}: Invalid payment method '{payment_method}'")
+                        continue
+
+                    # Add expense
+                    if add_expense(amount, category, payment_method, 
+                                  date.isoformat(), description, tags):
+                        imported_count += 1
+                    else:
+                        print(f"Row {row_num}: Failed to add expense")
+
+                except ValueError as e:
+                    print(f"Row {row_num}: Invalid data - {str(e)}")
+                except Exception as e:
+                    print(f"Row {row_num}: Error - {str(e)}")
+
+        print(f"Successfully imported {imported_count}/{row_num} expenses")
         return True
+
+    except FileNotFoundError:
+        print("File not found")
+        return False
     except Exception as e:
         print(f"Import error: {str(e)}")
         return False
 
 def export_csv(file_path, sort_field):
+    valid_fields = ['date', 'amount', 'category', 'payment_method']
+    sort_field = sort_field.lower()
+    
+    if sort_field not in valid_fields:
+        print(f"Invalid sort field. Valid options: {', '.join(valid_fields)}")
+        return False
+
     try:
-        valid_fields = ['date', 'amount', 'category', 'payment_method']
-        if sort_field not in valid_fields:
-            print("Invalid sort field")
-            return False
-        
-        expenses = list_expenses()
-        sorted_expenses = sorted(expenses, key=lambda x: x[sort_field])
-        
-        with open(file_path, 'w') as f:
+        conn = get_db_connection()
+        query = """
+            SELECT e.eid, e.amount, c.category_name, p.method, e.date, e.description,
+                   GROUP_CONCAT(t.tag_name, ', ') AS tags
+            FROM expenses e
+            JOIN categories c ON e.cid = c.cid
+            JOIN payment_methods p ON e.pid = p.pid
+            LEFT JOIN expenses_tags et ON e.eid = et.eid
+            LEFT JOIN tags t ON et.tid = t.tid
+            WHERE e.uid = ?
+            GROUP BY e.eid
+        """
+        expenses = conn.execute(query, (current_user['uid'],)).fetchall()
+
+        # Sort expenses
+        sorted_expenses = sorted(
+            expenses,
+            key=lambda x: (
+                x['date'] if sort_field == 'date' else
+                float(x['amount']) if sort_field == 'amount' else
+                x[sort_field]
+            )
+        )
+
+        with open(file_path, 'w', newline='') as f:
             writer = csv.writer(f)
-            writer.writerow(['Date', 'Amount', 'Category', 'Payment Method', 'Description', 'Tag'])
+            writer.writerow(['ID', 'Amount', 'Category', 'Payment Method', 
+                           'Date', 'Description', 'Tags'])
+            
             for exp in sorted_expenses:
                 writer.writerow([
-                    exp['date'],
+                    exp['eid'],
                     exp['amount'],
                     exp['category_name'],
                     exp['method'],
+                    exp['date'],
                     exp['description'],
-                    exp['tag']
+                    exp['tags'] or ''
                 ])
+
         return True
     except Exception as e:
         print(f"Export error: {str(e)}")
         return False
-#endregion
+# endregion
 
 def list_categories():
     try:
@@ -602,3 +678,108 @@ def list_payment_methods():
         return methods
     finally:
         conn.close()
+
+# region Reports
+def report_top_expenses(n, start_date, end_date):
+    try:
+        conn = get_db_connection()
+        query = """
+            SELECT e.eid, e.amount, c.category_name, p.method, e.date, e.description,
+                   GROUP_CONCAT(t.tag_name, ', ') AS tags
+            FROM expenses e
+            JOIN categories c ON e.cid = c.cid
+            JOIN payment_methods p ON e.pid = p.pid
+            LEFT JOIN expenses_tags et ON e.eid = et.eid
+            LEFT JOIN tags t ON et.tid = t.tid
+            WHERE e.uid = ? 
+            AND e.date BETWEEN ? AND ?
+            GROUP BY e.eid
+            ORDER BY e.amount DESC
+            LIMIT ?
+        """
+        expenses = conn.execute(query, (current_user['uid'], start_date, end_date, n)).fetchall()
+        
+        if not expenses:
+            print("No expenses found in this date range")
+            return
+        
+        print(f"\nTop {n} Expenses ({start_date} to {end_date}):")
+        print("{:<5} {:<10} {:<15} {:<12} {:<15} {:<30} {:<20}".format(
+            "ID", "Amount", "Category", "Payment", "Date", "Description", "Tags"))
+        print("-"*110)
+        for exp in expenses:
+            print("{:<5} ₹{:<9.2f} {:<15} {:<12} {:<15} {:<30} {:<20}".format(
+                exp['eid'],
+                exp['amount'],
+                exp['category_name'],
+                exp['method'],
+                exp['date'],
+                exp['description'] or "-",
+                exp['tags'] or "-"
+            ))
+        return True
+    except Exception as e:
+        print(f"Error generating report: {str(e)}")
+        return False
+
+def report_category_spending(category):
+    try:
+        conn = get_db_connection()
+        query = """
+            SELECT SUM(e.amount) AS total, c.category_name
+            FROM expenses e
+            JOIN categories c ON e.cid = c.cid
+            WHERE e.uid = ? AND LOWER(c.category_name) = ?
+        """
+        result = conn.execute(query, (current_user['uid'], category.lower())).fetchone()
+        
+        if not result or not result['total']:
+            print(f"No spending found in category '{category}'")
+            return False
+            
+        print(f"\nTotal spending in {category}: ₹{result['total']:.2f}")
+        return True
+    except Exception as e:
+        print(f"Error generating report: {str(e)}")
+        return False
+
+def report_above_average_expenses():
+    try:
+        conn = get_db_connection()
+        query = """
+            SELECT e.*, c.category_name, p.method, 
+                   (SELECT AVG(amount) 
+                    FROM expenses e2 
+                    WHERE e2.cid = e.cid) AS category_avg
+            FROM expenses e
+            JOIN categories c ON e.cid = c.cid
+            JOIN payment_methods p ON e.pid = p.pid
+            WHERE e.uid = ? 
+            AND e.amount > category_avg
+            ORDER BY c.category_name, e.amount DESC
+        """
+        expenses = conn.execute(query, (current_user['uid'],)).fetchall()
+        
+        if not expenses:
+            print("No expenses above category averages")
+            return
+        
+        print("\nExpenses Above Category Averages:")
+        print("{:<5} {:<10} {:<15} {:<12} {:<15} {:<30} {:<20}".format(
+            "ID", "Amount", "Category", "Payment", "Date", "Description", "Category Avg"))
+        print("-"*110)
+        for exp in expenses:
+            print("{:<5} ₹{:<9.2f} {:<15} {:<12} {:<15} {:<30} ₹{:<9.2f}".format(
+                exp['eid'],
+                exp['amount'],
+                exp['category_name'],
+                exp['method'],
+                exp['date'],
+                exp['description'] or "-",
+                exp['category_avg']
+            ))
+        return True
+    except Exception as e:
+        print(f"Error generating report: {str(e)}")
+        return False
+# endregion

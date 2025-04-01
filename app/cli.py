@@ -4,10 +4,11 @@ from datetime import datetime
 
 # Modify the main_cli function's loop:
 
+
 def main_cli():
     print("Expense Management System")
     print("Type 'help' for commands\n")
-    
+
     while True:
         try:
             cmd = input("> ").strip()
@@ -23,17 +24,18 @@ def main_cli():
         except SystemExit:
             break
 
+
 def process_command(cmd):
     parts = shlex.split(cmd)
     if not parts:
         return
-    
+
     command = parts[0].lower()
-    
+
     try:
         if command == "help":
             show_help()
-        
+
         # Authentication
         elif command == "login":
             if len(parts) == 3:
@@ -43,11 +45,11 @@ def process_command(cmd):
                     print("Invalid credentials")
             else:
                 print("Usage: login <username> <password>")
-        
+
         elif command == "logout":
             commands.logout()
             print("Logged out")
-        
+
         # User management
         elif command == "add_user":
             if len(parts) == 4:
@@ -57,7 +59,7 @@ def process_command(cmd):
                     print("Failed to add user")
             else:
                 print("Usage: add_user <username> <password> <role>")
-        
+
         # Command: Update User
         # Usage: update_user <username> <field> <new_value>
         elif command == "update_user":
@@ -80,15 +82,15 @@ def process_command(cmd):
             else:
                 print("Usage: delete_user <username>")
 
-        
         elif command == "list_users":
             if commands.current_user.get('role') == 'Admin':
                 users = commands.list_users()
                 for user in users:
-                    print(f"ID: {user['uid']} | User: {user['username']} | Role: {user['role']}")
+                    print(
+                        f"ID: {user['uid']} | User: {user['username']} | Role: {user['role']}")
             else:
                 print("Permission denied")
-        
+
         # Category management
         elif command == "add_category":
             if len(parts) == 2:
@@ -102,7 +104,7 @@ def process_command(cmd):
                     print("Permission denied. Only admins can add categories.")
             else:
                 print("Usage: add_category <name>")
-        
+
         # Payment method management
         elif command == "add_payment_method":
             if len(parts) == 2:
@@ -115,8 +117,7 @@ def process_command(cmd):
                     print("Permission denied. Only admins can add payment methods.")
             else:
                 print("Usage: add_payment_method <name>")
-        
-                
+
                 # In process_command() function:
         elif command == "add_expense":
             if len(parts) >= 6:
@@ -129,20 +130,22 @@ def process_command(cmd):
                     date = datetime.strptime(parts[4], '%Y-%m-%d').date()
                     description = parts[5]
                     tags = []
-                    
+
                     if len(parts) > 6:
                         tags = [tag.strip() for tag in parts[6].split(",")]
-                        
-                    if commands.add_expense(amount, category, payment_method, 
-                                        date.isoformat(), description, tags):
+
+                    if commands.add_expense(amount, category, payment_method,
+                                            date.isoformat(), description, tags):
                         print("Expense added successfully.")
                     else:
                         print("Failed to add expense. Check category/payment method.")
                 except ValueError:
-                    print("Invalid amount/date format. Use positive numbers and YYYY-MM-DD")
+                    print(
+                        "Invalid amount/date format. Use positive numbers and YYYY-MM-DD")
             else:
-                print("Usage: add_expense <amount> <category> <payment_method> <YYYY-MM-DD> <description> [tags]")
-                
+                print(
+                    "Usage: add_expense <amount> <category> <payment_method> <YYYY-MM-DD> <description> [tags]")
+
                 # In process_command() for list_expenses:
         elif command == "list_expenses":
             filters = {}
@@ -187,7 +190,7 @@ def process_command(cmd):
             else:
                 print("Usage: add_group <group_name> <description>")
 
-        #add group expense
+        # add group expense
         elif command == "add_group_expense":
             if len(parts) >= 7:
                 # Extract required parameters
@@ -204,10 +207,13 @@ def process_command(cmd):
 
                 if "|" in parts[7]:  # Check if both lists are provided
                     tag_part, user_part = parts[7].split("|", 1)
-                    tags = [tag.strip() for tag in tag_part.split(",") if tag.strip()]
-                    split_usernames = [user.strip() for user in user_part.split(",") if user.strip()]
+                    tags = [tag.strip()
+                            for tag in tag_part.split(",") if tag.strip()]
+                    split_usernames = [
+                        user.strip() for user in user_part.split(",") if user.strip()]
                 else:
-                    tags = [tag.strip() for tag in parts[7].split(",") if tag.strip()]  # Only tags provided
+                    tags = [tag.strip() for tag in parts[7].split(
+                        ",") if tag.strip()]  # Only tags provided
 
                 # Call the function with parsed arguments
                 if commands.add_group_expense(amount, group_name, category, payment_method, date, description, tags, split_usernames):
@@ -227,8 +233,25 @@ def process_command(cmd):
                     print("Failed to add user to group.")
             else:
                 print("Usage: add_user_to_group <username> <group_name>")
-        
+
         # In the 'process_command' function, add these elif blocks:
+
+                # In process_command() function:
+        elif command == "import_expenses":
+            if len(parts) == 2:
+                if commands.import_expenses(parts[1]):
+                    print("Import completed")
+            else:
+                print("Usage: import_expenses <file_path>")
+
+        elif command == "export_csv":
+            if len(parts) >= 4 and parts[-2] == "sort-on":
+                file_path = ' '.join(parts[1:-2]).rstrip(',')
+                sort_field = parts[-1]
+                if commands.export_csv(file_path, sort_field):
+                    print(f"Exported to {file_path}")
+            else:
+                print("Usage: export_csv <file_path>, sort-on <field_name>")
 
         elif command == "list_categories":
             categories = commands.list_categories()
@@ -242,6 +265,50 @@ def process_command(cmd):
             for idx, method in enumerate(methods, 1):
                 print(f"{idx}. {method['method']}")
 
+                # In process_command() function:
+        elif command == "report":
+            if len(parts) < 2:
+                print("Invalid report command")
+                return
+
+            subcmd = parts[1].lower()
+
+            try:
+                if subcmd == "top_expenses":
+                    if len(parts) >= 5 and parts[2].isdigit() and parts[3] == "date-range":
+                        n = int(parts[2])
+                        # Join the remaining parts to handle dates that might contain spaces
+                        date_range = ' '.join(parts[4:]).split(" to ")
+                        if len(date_range) == 2:
+                            start_date = date_range[0].strip()
+                            end_date = date_range[1].strip()
+                            commands.report_top_expenses(
+                                n, start_date, end_date)
+                        else:
+                            print(
+                                "Invalid date range format. Use 'date-range <start_date> to <end_date>'")
+                    else:
+                        print(
+                            "Usage: report top_expenses <N> date-range <start_date> to <end_date>")
+
+                elif subcmd == "category_spending":
+                    if len(parts) == 3:
+                        commands.report_category_spending(parts[2])
+                    else:
+                        print("Usage: report category_spending <category>")
+
+                elif subcmd == "above_average_expenses":
+                    commands.report_above_average_expenses()
+
+                else:
+                    print("Invalid report type")
+
+            except ValueError:
+                print(
+                    "Invalid arguments. N must be a number and date format should be YYYY-MM-DD")
+            except Exception as e:
+                print(f"Report error: {str(e)}")
+
         elif command == "exit":
             print("Exiting...")
             raise SystemExit
@@ -250,6 +317,7 @@ def process_command(cmd):
 
     except Exception as e:
         print(f"Error: {str(e)}")
+
 
 def show_help():
     print("""
@@ -290,6 +358,7 @@ def show_help():
     help
     exit
     """)
+
 
 if __name__ == "__main__":
     main_cli()
