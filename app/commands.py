@@ -174,46 +174,84 @@ def add_expense(amount, category, payment_method, date, description, tags):
 def update_expense(expense_id, field, new_value):
     try:
         conn = get_db_connection()
-        valid_fields = ['amount', 'date', 'description', 'tag']
+        valid_fields = ['amount', 'date', 'description', 'category', 'payment_method', 'tags']
         
         if field not in valid_fields:
-            print("Invalid field")
+            print(f"Invalid field. Valid fields: {', '.join(valid_fields)}")
             return False
-        
+
         # Verify ownership
-        expense = conn.execute("""
-            SELECT uid FROM expenses 
-            WHERE eid = ?
-        """, (expense_id,)).fetchone()
-        
+        expense = conn.execute("SELECT uid FROM expenses WHERE eid = ?", 
+                              (expense_id,)).fetchone()
         if not expense or expense['uid'] != current_user.get('uid'):
             print("Expense not found or permission denied")
             return False
+
+        if field == 'category':
+            category = conn.execute("SELECT cid FROM categories WHERE category_name = ?",
+                                  (new_value.lower(),)).fetchone()
+            if not category:
+                print("Invalid category")
+                return False
+            conn.execute("UPDATE expenses SET cid = ? WHERE eid = ?",
+                       (category['cid'], expense_id))
         
-        conn.execute(f"""
-            UPDATE expenses 
-            SET {field} = ?
-            WHERE eid = ?
-        """, (new_value, expense_id))
+        elif field == 'payment_method':
+            method = conn.execute("SELECT pid FROM payment_methods WHERE method = ?",
+                                (new_value.lower(),)).fetchone()
+            if not method:
+                print("Invalid payment method")
+                return False
+            conn.execute("UPDATE expenses SET pid = ? WHERE eid = ?",
+                       (method['pid'], expense_id))
+        
+        elif field == 'tags':
+            # Clear existing tags
+            conn.execute("DELETE FROM expenses_tags WHERE eid = ?", (expense_id,))
+            # Add new tags
+            for tag in new_value.split(','):
+                tag = tag.strip().lower()
+                tid = conn.execute("SELECT tid FROM tags WHERE tag_name = ?",
+                                 (tag,)).fetchone()
+                if not tid:
+                    conn.execute("INSERT INTO tags (tag_name) VALUES (?)", (tag,))
+                    tid = conn.lastrowid
+                else:
+                    tid = tid[0]
+                conn.execute("INSERT INTO expenses_tags (eid, tid) VALUES (?, ?)",
+                            (expense_id, tid))
+        
+        else:
+            # For amount/date/description
+            if field == 'amount':
+                new_value = float(new_value)
+            elif field == 'date':
+                datetime.strptime(new_value, '%Y-%m-%d')  # Validate format
+            
+            conn.execute(f"UPDATE expenses SET {field} = ? WHERE eid = ?",
+                       (new_value, expense_id))
+        
         conn.commit()
         return True
+    except ValueError as e:
+        print(f"Invalid value: {str(e)}")
+        return False
     finally:
         conn.close()
 
 def delete_expense(expense_id):
     try:
         conn = get_db_connection()
-        
         # Verify ownership
-        expense = conn.execute("""
-            SELECT uid FROM expenses 
-            WHERE eid = ?
-        """, (expense_id,)).fetchone()
-        
+        expense = conn.execute("SELECT uid FROM expenses WHERE eid = ?", 
+                             (expense_id,)).fetchone()
         if not expense or expense['uid'] != current_user.get('uid'):
             print("Expense not found or permission denied")
             return False
         
+        # Delete associated tags
+        conn.execute("DELETE FROM expenses_tags WHERE eid = ?", (expense_id,))
+        # Delete expense
         conn.execute("DELETE FROM expenses WHERE eid = ?", (expense_id,))
         conn.commit()
         return True
@@ -223,23 +261,68 @@ def delete_expense(expense_id):
 def list_expenses(filters=None):
     try:
         conn = get_db_connection()
-        query = """
-            SELECT e.*, c.category_name, p.method 
+        base_query = """
+            SELECT e.eid, e.amount, c.category_name, p.method, e.date, e.description,
+                   GROUP_CONCAT(t.tag_name, ', ') AS tags
             FROM expenses e
             JOIN categories c ON e.cid = c.cid
             JOIN payment_methods p ON e.pid = p.pid
+            LEFT JOIN expenses_tags et ON e.eid = et.eid
+            LEFT JOIN tags t ON et.tid = t.tid
             WHERE e.uid = ?
         """
         params = [current_user['uid']]
-        
+        conditions = []
+
         if filters:
-            query += " AND " + " AND ".join(f"{k} = ?" for k in filters.keys())
-            params.extend(filters.values())
-            
-        return conn.execute(query, params).fetchall()
+            for key, value in filters.items():
+                if key == 'category':
+                    conditions.append("c.category_name = ?")
+                    params.append(value.lower())
+                elif key == 'payment_method':
+                    conditions.append("p.method = ?")
+                    params.append(value.lower())
+                elif key == 'min_amount':
+                    conditions.append("e.amount >= ?")
+                    params.append(float(value))
+                elif key == 'max_amount':
+                    conditions.append("e.amount <= ?")
+                    params.append(float(value))
+                elif key == 'date':
+                    conditions.append("e.date = ?")
+                    params.append(value)
+                elif key == 'tag':
+                    conditions.append("t.tag_name = ?")
+                    params.append(value.lower())
+
+        if conditions:
+            base_query += " AND " + " AND ".join(conditions)
+        
+        base_query += " GROUP BY e.eid ORDER BY e.date DESC"
+        
+        expenses = conn.execute(base_query, params).fetchall()
+        
+        if not expenses:
+            print("No expenses found")
+            return
+        
+        print("\n{:<5} {:<10} {:<15} {:<12} {:<15} {:<30} {:<20}".format(
+            "ID", "Amount", "Category", "Payment", "Date", "Description", "Tags"))
+        print("-"*110)
+        for exp in expenses:
+            print("{:<5} ₹{:<9.2f} {:<15} {:<12} {:<15} {:<30} {:<20}".format(
+                exp['eid'],
+                exp['amount'],
+                exp['category_name'],
+                exp['method'],
+                exp['date'],
+                exp['description'] or "-",
+                exp['tags'] or "-"
+            ))
+        print()
+        
     finally:
         conn.close()
-#endregion
 
 def add_tag(tag_name):
     try:
@@ -503,3 +586,19 @@ def export_csv(file_path, sort_field):
         print(f"Export error: {str(e)}")
         return False
 #endregion
+
+def list_categories():
+    try:
+        conn = get_db_connection()
+        categories = conn.execute("SELECT category_name FROM categories").fetchall()
+        return categories
+    finally:
+        conn.close()
+
+def list_payment_methods():
+    try:
+        conn = get_db_connection()
+        methods = conn.execute("SELECT method FROM payment_methods").fetchall()
+        return methods
+    finally:
+        conn.close()

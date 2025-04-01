@@ -2,6 +2,8 @@ from app import commands
 import shlex
 from datetime import datetime
 
+# Modify the main_cli function's loop:
+
 def main_cli():
     print("Expense Management System")
     print("Type 'help' for commands\n")
@@ -11,9 +13,14 @@ def main_cli():
             cmd = input("> ").strip()
             if not cmd:
                 continue
+            if cmd.lower() == 'exit':
+                print("Exiting...")
+                break
             process_command(cmd)
         except KeyboardInterrupt:
             print("\nExiting...")
+            break
+        except SystemExit:
             break
 
 def process_command(cmd):
@@ -110,26 +117,42 @@ def process_command(cmd):
                 print("Usage: add_payment_method <name>")
         
                 
-        # add_expense         
+                # In process_command() function:
         elif command == "add_expense":
             if len(parts) >= 6:
-                amount = parts[1]
-                category = parts[2].strip().lower()
-                payment_method = parts[3].strip().lower()
-                date = parts[4]
-                description = parts[5]
-
-                # Handle tags as comma-separated values
-                tags = []
-                if len(parts) > 6:
-                    tags = [tag.strip() for tag in ",".join(parts[6:]).split(",") if tag.strip()]
-
-                if commands.add_expense(amount, category, payment_method, date, description, tags):
-                    print("Expense added successfully.")
-                else:
-                    print("Failed to add the expense!")
+                try:
+                    amount = float(parts[1])
+                    if amount <= 0:
+                        raise ValueError
+                    category = parts[2].strip().lower()
+                    payment_method = parts[3].strip().lower()
+                    date = datetime.strptime(parts[4], '%Y-%m-%d').date()
+                    description = parts[5]
+                    tags = []
+                    
+                    if len(parts) > 6:
+                        tags = [tag.strip() for tag in parts[6].split(",")]
+                        
+                    if commands.add_expense(amount, category, payment_method, 
+                                        date.isoformat(), description, tags):
+                        print("Expense added successfully.")
+                    else:
+                        print("Failed to add expense. Check category/payment method.")
+                except ValueError:
+                    print("Invalid amount/date format. Use positive numbers and YYYY-MM-DD")
             else:
-                print("Usage: add_expense <amount> <category> <payment_method> <date> <description> <list_of_tags (comma-separated)>")
+                print("Usage: add_expense <amount> <category> <payment_method> <YYYY-MM-DD> <description> [tags]")
+                
+                # In process_command() for list_expenses:
+        elif command == "list_expenses":
+            filters = {}
+            for arg in parts[1:]:
+                if arg.startswith("--"):
+                    key_value = arg[2:].split("=", 1)
+                    if len(key_value) == 2:
+                        key, value = key_value
+                        filters[key.replace("-", "_")] = value
+            commands.list_expenses(filters)
 
         # Input format: add_tag <tag_name>
         elif command == "add_tag":
@@ -205,6 +228,23 @@ def process_command(cmd):
             else:
                 print("Usage: add_user_to_group <username> <group_name>")
         
+        # In the 'process_command' function, add these elif blocks:
+
+        elif command == "list_categories":
+            categories = commands.list_categories()
+            print("Categories:")
+            for idx, cat in enumerate(categories, 1):
+                print(f"{idx}. {cat['category_name']}")
+
+        elif command == "list_payment_methods":
+            methods = commands.list_payment_methods()
+            print("Payment Methods:")
+            for idx, method in enumerate(methods, 1):
+                print(f"{idx}. {method['method']}")
+
+        elif command == "exit":
+            print("Exiting...")
+            raise SystemExit
         else:
             print("Invalid command")
 
