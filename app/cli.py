@@ -152,7 +152,8 @@ def process_command(cmd):
                 try:
                     amount = float(parts[1])
                     if amount <= 0:
-                        raise ValueError
+                        print("Amount must be greater than 0")
+                        return
                     category = parts[2].strip().lower()
                     payment_method = parts[3].strip().lower()
                     date = datetime.strptime(parts[4], '%Y-%m-%d').date()

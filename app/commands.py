@@ -98,15 +98,13 @@ def add_payment_method(method):
 
 #region Expense Management
 def add_expense(amount, category, payment_method, date, description, tags):
-    
-    # category = category.strip().lower()
-    # print(category)
-    # payment_method = payment_method.strip().lower()
-    # print(amount, category, payment_method, date, description, tags)
-
     try:
         if not current_user.get('uid'):
             print("Error: User not logged in.")
+            return False
+            
+        if amount <= 0:
+            print("Error: Amount must be greater than 0")
             return False
         
         conn = get_db_connection()
