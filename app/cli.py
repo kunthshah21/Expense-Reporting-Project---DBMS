@@ -176,16 +176,27 @@ def process_command(cmd):
 
                 # In process_command() for list_expenses:
         elif command == "list_expenses":
-            if not check_login():
+            if not commands.current_user or not commands.current_user.get('uid'):
+                print("Please login first")
                 return
-                
+            
             filters = {}
             for arg in parts[1:]:
                 if arg.startswith("--"):
                     key_value = arg[2:].split("=", 1)
                     if len(key_value) == 2:
                         key, value = key_value
-                        filters[key.replace("-", "_")] = value
+                        # Handle amount range special case
+                        if key == "amount":
+                            if '-' in value:
+                                min_val, max_val = value.split('-', 1)
+                                filters['min_amount'] = min_val
+                                filters['max_amount'] = max_val
+                            else:
+                                print("Invalid amount format. Use min-max")
+                                return
+                        else:
+                            filters[key.replace("-", "_")] = value
             commands.list_expenses(filters)
 
         elif command == "update_expense":
@@ -204,6 +215,23 @@ def process_command(cmd):
             else:
                 print("Usage: update_expense <expense_id> <field> <new_value>")
                 print("Valid fields: amount, date, description, category, payment_method, tags")
+
+        elif command == "delete_expense":
+            if not commands.current_user or not commands.current_user.get('uid'):
+                print("Please login first")
+                return
+            
+            if len(parts) == 2:
+                try:
+                    expense_id = int(parts[1])
+                    if commands.delete_expense(expense_id):
+                        print(f"Expense {expense_id} deleted successfully")
+                    else:
+                        print("Failed to delete expense")
+                except ValueError:
+                    print("Invalid expense ID. Must be a number")
+            else:
+                print("Usage: delete_expense <expense_id>")
 
         # Input format: add_tag <tag_name>
         elif command == "add_tag":
