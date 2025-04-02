@@ -1,3 +1,7 @@
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+
 import streamlit as st
 import pandas as pd
 from datetime import datetime
@@ -116,7 +120,7 @@ def main():
         elif st.session_state.get('current_page') == 'groups':
             display_groups_page()
         elif st.session_state.get('current_page') == 'import_export':
-            display_import_export_page()
+            st.error("Import/Export page is not implemented yet.")
         else:
             display_dashboard()  # Default view
 
@@ -769,22 +773,18 @@ def display_groups_page():
             users = list_users()
             
             # For groups, we need to implement a function to list groups
-            # This is a placeholder - we should create this function in commands.py
-            # For now we'll use a text input
-            username = st.selectbox("Select User", [user["username"] for user in users])
-            group_name = st.text_input("Group Name")
             
             add_button = st.form_submit_button("Add User to Group")
             
             if add_button:
+                username = st.text_input("Username")
                 if not username or not group_name:
                     st.error("Username and group name are required.")
-                else:
                     success = add_user_to_group(username, group_name)
-                    if success:
-                        st.success(f"User '{username}' added to group '{group_name}' successfully!")
-                    else:
-                        st.error("Failed to add user to group.")
+                    success = add_user_to_group(username, group_name)
+                    st.success(f"User '{username}' added to group '{group_name}' successfully!")
+                else:
+                    st.error("Failed to add user to group.")
     
     with tab3:
         st.markdown("### Add Group Expense")
@@ -798,12 +798,12 @@ def display_groups_page():
                 category = st.selectbox("Category", [cat["category_name"] for cat in list_categories()])
                 payment_method = st.selectbox("Payment Method", [method["method"] for method in list_payment_methods()])
             
+                group_name = st.text_input("Group Name")
+                category = st.selectbox("Category", [cat["category_name"] for cat in list_categories()])
+                payment_method = st.selectbox("Payment Method", [method["method"] for method in list_payment_methods()])
+            
             with col2:
                 description = st.text_input("Description")
-                
-                # Tags
-                available_tags = [tag["tag_name"] for tag in list_tags()]
-                selected_tags = st.multiselect("Tags", available_tags)
                 
                 # Users to split with
                 users = list_users()
@@ -817,13 +817,15 @@ def display_groups_page():
                     st.error("Amount must be greater than 0")
                 elif not group_name:
                     st.error("Group name is required")
-                elif not split_users:
                     st.error("At least one other user is required for splitting")
                 else:
-                    success = add_group_expense(
-                        float(amount), group_name, category.lower(), payment_method.lower(),
-                        description, selected_tags, split_users
-                    )
+                    if not split_users:
+                        st.error("At least one other user is required for splitting")
+                    else:
+                        success = add_group_expense(
+                            float(amount), group_name, category.lower(), payment_method.lower(),
+                            description, split_users
+                        )
                     if success:
                         st.success("Group expense added successfully!")
                     else:
