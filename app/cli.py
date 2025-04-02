@@ -118,7 +118,7 @@ def process_command(cmd):
             else:
                 print("Usage: add_payment_method <name>")
 
-                # In process_command() function:
+        # In process_command() function:
         elif command == "add_expense":
             if len(parts) >= 6:
                 try:
@@ -201,19 +201,24 @@ def process_command(cmd):
                 date = parts[5]
                 description = parts[6]
 
+                # Validate date format
+                try:
+                    # Try to parse the date to ensure it's in YYYY-MM-DD format
+                    datetime.strptime(date, '%Y-%m-%d')
+                except ValueError:
+                    print("Invalid date format. Please use YYYY-MM-DD.")
+                    return  # Return early if the date format is incorrect
+
                 # Handle tags and split users
                 tags = []
                 split_usernames = []
 
                 if "|" in parts[7]:  # Check if both lists are provided
                     tag_part, user_part = parts[7].split("|", 1)
-                    tags = [tag.strip()
-                            for tag in tag_part.split(",") if tag.strip()]
-                    split_usernames = [
-                        user.strip() for user in user_part.split(",") if user.strip()]
+                    tags = [tag.strip() for tag in tag_part.split(",") if tag.strip()]
+                    split_usernames = [user.strip() for user in user_part.split(",") if user.strip()]
                 else:
-                    tags = [tag.strip() for tag in parts[7].split(
-                        ",") if tag.strip()]  # Only tags provided
+                    tags = [tag.strip() for tag in parts[7].split(",") if tag.strip()]  # Only tags provided
 
                 # Call the function with parsed arguments
                 if commands.add_group_expense(amount, group_name, category, payment_method, date, description, tags, split_usernames):
@@ -221,7 +226,8 @@ def process_command(cmd):
                 else:
                     print("Failed to add group expense.")
             else:
-                print("Usage: add_group_expense <amount> <group_name> <category> <payment_method> <date> <description> <comma-separated-tags> | <comma-separated-usernames>")
+                print("Usage: add_group_expense <amount> <group_name> <category> <payment_method> <YYYY-MM-DD>  <description> <comma-separated-tags> | <comma-separated-usernames>")
+
 
         # Command: Add User to Group
         # Usage: add_user_to_group <username> <group_name>
@@ -327,6 +333,90 @@ def process_command(cmd):
                     "Invalid arguments. N must be a number and date format should be YYYY-MM-DD")
             except Exception as e:
                 print(f"Report error: {str(e)}")
+        
+        elif command == "list_groups":
+            if commands.list_groups():
+                pass
+            else:
+                print("Failed to list groups")
+
+        elif command == "report_group_expenses":
+            if len(parts) < 2:
+                print("Usage: report_group_expenses <group_name> [--category=<category>] [--date=<date>] [--min-amount=<amount>] [--max-amount=<amount>] [--tag=<tag>]")
+            else:
+                group_name = parts[1]
+                filters = {}
+                
+                # Parse the filters passed via command line
+                for arg in parts[2:]:
+                    if arg.startswith("--"):
+                        key_value = arg[2:].split("=", 1)
+                        if len(key_value) == 2:
+                            key, value = key_value
+                            filters[key.replace("-", "_")] = value
+
+                # Call the report_group_expenses function with filters
+                if commands.report_group_expenses(group_name, filters):
+                    print(f"Group expenses report for '{group_name}' successfully retrieved.")
+                else:
+                    print(f"Failed to retrieve report for group '{group_name}'.")
+
+        elif command == "report_group_tag_usage":
+            if len(parts) == 2:
+                group_name = parts[1]
+                if commands.report_group_tag_usage(group_name):
+                    print(f"Success, a table for all the tags usage of {group_name} group")
+            else:
+                print("Usage: report_group_tag_usage <group_name>")
+
+        elif command == "report_group_category_spending":
+            if len(parts) == 3:
+                group_name = parts[1]
+                category = parts[2]
+                if commands.report_group_category_spending(group_name, category):
+                    print(f"Success, a table for all the category and the expenses of {group_name} group")
+            else:
+                print("Usage: report_group_category_spending <group_name> <category>")
+
+        elif command == "report_group_user_expenses":
+            if len(parts) < 2:
+                print("Usage: report_group_user_expenses <group_name>")
+            else:
+                group_name = parts[1]
+                
+                # Call the report_group_user_expenses function
+                if commands.report_group_user_expenses(group_name):
+                    print(f"User expenses report for group '{group_name}' successfully retrieved.")
+                else:
+                    print(f"Failed to retrieve report for group '{group_name}'.")
+
+        elif command == "export_group_csv":
+            if len(parts) >= 4 and parts[-2] == "sort-on":
+                file_path = ' '.join(parts[1:-2]).rstrip(',')
+                sort_field = parts[-1]
+                group_name = parts[1]
+
+                # Export group data to CSV using the provided command
+                if commands.export_group_csv(group_name, file_path, sort_field):
+                    print(f"Group data exported to {file_path}")
+                else:
+                    print(f"Error: Could not export group data for {group_name}.")
+            else:
+                print("Usage: export_group_csv <group_name> <file_path>, sort-on <field_name>")
+
+        elif command == "import_group_csv":
+            if len(parts) >= 3:  # Only need group_name and file_path
+                file_path = parts[-1]
+                group_name = parts[1]
+
+                # Import group data from the provided CSV file
+                if commands.import_group_csv(group_name, file_path):
+                    print(f"Group data imported from {file_path}")
+                else:
+                    print(f"Error: Could not import group data for {group_name}.")
+            else:
+                print("Usage: import_group_csv <group_name> <file_path>")
+
 
         elif command == "exit":
             print("Exiting...")
@@ -368,7 +458,15 @@ def show_help():
     add_group <group_name> <description>
     add_group_expense add_group_expense <amount> <group_name> <category> <payment_method> <date> <description> <comma-separated-tags> | <comma-separated-usernames>
     
-          
+    Group Queries:
+        list_groups
+        report_group_expenses <group_name> [--category=<category>] [--date=<date>] [--min-amount=<amount>] [--max-amount=<amount>] [--tag=<tag>] 
+        report_group_tag_usage
+        report_group_category_spending
+        report_group_user_expenses  
+        export_group_csv
+        import_group_csv
+
     Import/Export:
     import_expenses <file.csv>
     export_csv <file.csv> sort-on <field>

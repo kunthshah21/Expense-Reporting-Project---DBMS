@@ -946,7 +946,7 @@ def report_tag_expenses():
             print("No tag usage data available")
             return
 
-        print("\nTag Expense Counts:")
+        print("\nTag Expense (Users) Counts:")
         print("{:<20} {:<15}".format("Tag", "Expense Count"))
         print("-" * 35)
         for row in results:
@@ -959,3 +959,391 @@ def report_tag_expenses():
         print(f"Error generating report: {str(e)}")
         return False
 # endregion
+
+#region group queries
+def list_groups():
+    try:
+        conn = get_db_connection()
+
+        # If the user is not an admin, only show the groups they belong to
+        if current_user['role'] != 'Admin':
+            print(f"Only admins can view all the groups. \n Showing {current_user['username']}'s groups")
+
+            # Simplified query to fetch the groups that the current user is part of
+            query = """
+                SELECT group_name, date_created, description
+                FROM groups
+                JOIN user_group ON groups.gid = user_group.gid
+                WHERE user_group.uid = ?
+            """
+            groups = conn.execute(query, (current_user['uid'],)).fetchall()
+
+        else:
+            # Admins can view all groups
+            print("Admin is viewing all groups.")
+            query = "SELECT group_name, date_created, description FROM groups"
+            groups = conn.execute(query).fetchall()
+
+        if not groups:
+            print("No groups found.")
+            return False
+        
+        print("\nGroups:")
+        print("{:<20} {:<20} {:<50}".format("Group Name", "Date Created", "Description"))
+        print("-" * 80)
+        for group in groups:
+            print("{:<20} {:<20} {:<50}".format(group['group_name'], group['date_created'], group['description'] or "-"))
+
+        return True
+
+    except Exception as e:
+        print(f"Error retrieving groups: {str(e)}")
+        return False
+
+
+def report_group_expenses(group_name, filters=None):
+    try:
+        conn = get_db_connection()
+
+        # Check if user has permission to view the group
+        if not check_group_permissions(group_name):
+            return False
+        
+        base_query = """
+            SELECT ge.geid, ge.amount, c.category_name, p.method, ge.date, ge.description,
+                   GROUP_CONCAT(t.tag_name, ', ') AS tags,
+                   GROUP_CONCAT(u.username, ', ') AS usernames
+            FROM group_expenses ge
+            JOIN categories c ON ge.cid = c.cid
+            JOIN payment_methods p ON ge.pid = p.pid
+            LEFT JOIN group_expense_tags getag ON ge.geid = getag.geid
+            LEFT JOIN tags t ON getag.tid = t.tid
+            LEFT JOIN split_users su ON ge.geid = su.geid
+            LEFT JOIN users u ON su.uid = u.uid
+            WHERE ge.gid = (SELECT gid FROM groups WHERE group_name = ?)
+        """
+        params = [group_name]
+
+        # Apply filters
+        if filters:
+            for key, value in filters.items():
+                if key == 'category':
+                    base_query += " AND LOWER(c.category_name) = ?"
+                    params.append(value.lower())
+                elif key == 'date':
+                    base_query += " AND ge.date = ?"
+                    params.append(value)
+                elif key == 'min_amount':
+                    base_query += " AND ge.amount >= ?"
+                    params.append(float(value))
+                elif key == 'max_amount':
+                    base_query += " AND ge.amount <= ?"
+                    params.append(float(value))
+                elif key == 'tag':
+                    base_query += " AND t.tag_name = ?"
+                    params.append(value.lower())
+
+        base_query += " GROUP BY ge.geid ORDER BY ge.amount DESC"
+        
+        expenses = conn.execute(base_query, params).fetchall()
+
+        if not expenses:
+            print(f"No expenses found for group {group_name}")
+            return False
+        
+        print(f"\nGroup {group_name} Expenses:")
+        print("{:<5} {:<10} {:<15} {:<12} {:<15} {:<30} {:<20} {:<30}".format(
+            "ID", "Amount", "Category", "Payment", "Date", "Description", "Tags", "Users"))
+        print("-" * 120)
+        
+        for exp in expenses:
+            print("{:<5} ₹{:<9.2f} {:<15} {:<12} {:<15} {:<30} {:<20} {:<30}".format(
+                exp['geid'],
+                exp['amount'],
+                exp['category_name'],
+                exp['method'],
+                exp['date'],
+                exp['description'] or "-",
+                exp['tags'] or "-",
+                exp['usernames'] or "-"
+            ))
+        return True
+    
+    except Exception as e:
+        print(f"Error generating group expenses report: {str(e)}")
+        return False
+
+
+def report_group_category_spending(group_name, category):
+    try:
+        # Check if the current user is an admin or a member of the group
+        conn = get_db_connection()
+        if (check_group_permissions(group_name)):
+            pass
+        else:
+            return False
+
+        # Proceed with generating the group category report
+        query = """
+            SELECT SUM(ge.amount) AS total, c.category_name
+            FROM group_expenses ge
+            JOIN categories c ON ge.cid = c.cid
+            WHERE ge.gid = (SELECT gid FROM groups WHERE group_name = ?) 
+            AND LOWER(c.category_name) = ?
+        """
+        
+        result = conn.execute(query, (group_name, category.lower())).fetchone()
+        
+        if not result or not result['total']:
+            print(f"No spending found in category '{category}' for group {group_name}")
+            return False
+            
+        print(f"\nTotal spending in {category} for group {group_name}: ₹{result['total']:.2f}")
+        return True
+
+    except Exception as e:
+        print(f"Error generating group category report: {str(e)}")
+        return False
+    
+def report_group_tag_usage(group_name):
+    try:
+        # Check if the current user is an admin or a member of the group
+        conn = get_db_connection()
+        
+        if (check_group_permissions(group_name)):
+            pass
+        else:
+            return False
+
+        # Proceed with generating the group tag usage report
+        query = """
+            SELECT t.tag_name, COUNT(getag.geid) AS expense_count
+            FROM tags t
+            LEFT JOIN group_expense_tags getag ON t.tid = getag.tid
+            LEFT JOIN group_expenses ge ON getag.geid = ge.geid
+            WHERE ge.gid = (SELECT gid FROM groups WHERE group_name = ?)
+            GROUP BY t.tag_name
+            ORDER BY expense_count DESC
+        """
+        
+        results = conn.execute(query, (group_name,)).fetchall()
+        
+        if not results:
+            print(f"No tag usage data found for group {group_name}")
+            return False
+
+        print(f"\nTag Usage for Group {group_name}:")
+        print("{:<20} {:<15}".format("Tag", "Expense Count"))
+        print("-" * 35)
+        for row in results:
+            print("{:<20} {:<15}".format(row['tag_name'], row['expense_count'] or 0))
+        return True
+
+    except Exception as e:
+        print(f"Error generating group tag report: {str(e)}")
+        return False
+    
+
+def report_group_user_expenses(group_name):
+    try:
+        conn = get_db_connection()
+        if (check_group_permissions(group_name)):
+            pass
+        else:
+            return False
+        query = """
+            SELECT u.username, SUM(su.split_amount) AS total_spent
+            FROM users u
+            JOIN split_users su ON u.uid = su.uid
+            JOIN group_expenses ge ON su.geid = ge.geid
+            JOIN groups g ON ge.gid = g.gid
+            WHERE g.group_name = ?
+            GROUP BY u.uid
+            ORDER BY total_spent ASC
+        """
+        results = conn.execute(query, (group_name,)).fetchall()
+
+        if not results:
+            print(f"No users found in group {group_name} or no spending recorded.")
+            return
+
+        print(f"\nUsers and Their Spending in Group {group_name}:")
+        print("{:<20} {:<15}".format("Username", "Total Spent"))
+        print("-" * 40)
+        for row in results:
+            print("{:<20} ₹{:<13.2f}".format(row['username'], row['total_spent'] or 0))
+
+        return True
+    except Exception as e:
+        print(f"Error retrieving group user spending data: {str(e)}")
+        return False
+
+
+def check_group_permissions(group_name):
+    try:
+        conn = get_db_connection()
+        
+        # Check if the current user is an admin
+        if current_user['role'] == 'Admin':
+            # Admins can access any group, so no further check needed
+            return True
+        else:
+            # Check if the current user is part of the group
+            query = """
+                SELECT 1 
+                FROM user_group ug
+                JOIN groups g ON ug.gid = g.gid
+                WHERE g.group_name = ? AND ug.uid = ?
+            """
+            user_part_of_group = conn.execute(query, (group_name, current_user['uid'])).fetchone()
+            
+            if not user_part_of_group:
+                print(f"Error: {current_user['username']} is not a member of group '{group_name}'.")
+                return False
+            
+        return True
+    
+    except Exception as e:
+        print(f"Error checking permissions for group '{group_name}': {str(e)}")
+        return False
+
+
+def export_group_csv(group_name, file_path, sort_field):
+    try:
+        conn = get_db_connection()
+
+        # Check if the current user has permission to access this group
+        if not check_group_permissions(group_name):
+            return False
+
+        # Fetch group details
+        query_group = """
+            SELECT g.gid, g.group_name, g.date_created, g.description
+            FROM groups g
+            WHERE g.group_name = ?
+        """
+        group = conn.execute(query_group, (group_name,)).fetchone()
+
+        if not group:
+            print(f"Group {group_name} does not exist.")
+            return False
+        
+        # Fetch group expenses
+        query_expenses = """
+            SELECT ge.geid, ge.amount, c.category_name, p.method, ge.date, ge.description
+            FROM group_expenses ge
+            JOIN categories c ON ge.cid = c.cid
+            JOIN payment_methods p ON ge.pid = p.pid
+            WHERE ge.gid = ?
+        """
+        expenses = conn.execute(query_expenses, (group['gid'],)).fetchall()
+
+        # Fetch tags for each expense
+        query_tags = """
+            SELECT geid, GROUP_CONCAT(t.tag_name, ', ') AS tags
+            FROM group_expense_tags getag
+            JOIN tags t ON getag.tid = t.tid
+            GROUP BY geid
+        """
+        expense_tags = conn.execute(query_tags).fetchall()
+
+        # Fetch users and their split amounts in the group
+        query_users = """
+            SELECT u.username, su.split_amount
+            FROM split_users su
+            JOIN users u ON su.uid = u.uid
+            WHERE su.geid IN (SELECT geid FROM group_expenses WHERE gid = ?)
+        """
+        users_split = conn.execute(query_users, (group['gid'],)).fetchall()
+
+        # Prepare data for export
+        with open(file_path, 'w', newline='') as csvfile:
+            fieldnames = ['group_name', 'date_created', 'description', 'expense_id', 'amount', 'category_name', 'payment_method', 'expense_date', 'expense_description', 'tags', 'usernames', 'split_amount']
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
+
+            for expense in expenses:
+                expense_tags_dict = next((tag for tag in expense_tags if tag['geid'] == expense['geid']), {'tags': ''})
+                usernames = ', '.join([user['username'] for user in users_split if user['split_amount'] == expense['amount']])
+                writer.writerow({
+                    'group_name': group['group_name'],
+                    'date_created': group['date_created'],
+                    'description': group['description'],
+                    'expense_id': expense['geid'],
+                    'amount': expense['amount'],
+                    'category_name': expense['category_name'],
+                    'payment_method': expense['method'],
+                    'expense_date': expense['date'],
+                    'expense_description': expense['description'],
+                    'tags': expense_tags_dict['tags'],
+                    'usernames': usernames,
+                    'split_amount': ', '.join([str(user['split_amount']) for user in users_split if user['split_amount'] == expense['amount']])
+                })
+
+        print(f"Group data successfully exported to {file_path}")
+        return True
+
+    except Exception as e:
+        print(f"Error exporting group data: {str(e)}")
+        return False
+
+def import_group_csv(group_name, file_path, sort_field):
+    try:
+        conn = get_db_connection()
+
+        # Check if the current user has permission to import data for this group
+        if not check_group_permissions(group_name):
+            return False
+
+        # Open and read the CSV file
+        with open(file_path, 'r') as csvfile:
+            reader = csv.DictReader(csvfile)
+
+            # Process each row in the CSV
+            for row in reader:
+                # Insert group details (if they don't exist already)
+                query_group = """
+                    INSERT INTO groups (group_name, date_created, description)
+                    VALUES (?, ?, ?)
+                """
+                conn.execute(query_group, (row['group_name'], row['date_created'], row['description']))
+
+                # Insert expense details
+                query_expenses = """
+                    INSERT INTO group_expenses (gid, amount, cid, pid, date, description)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """
+                # Extract the category_id and payment_method_id based on the names in the CSV
+                category_id = conn.execute("SELECT cid FROM categories WHERE category_name = ?", (row['category_name'],)).fetchone()['cid']
+                payment_method_id = conn.execute("SELECT pid FROM payment_methods WHERE method = ?", (row['payment_method'],)).fetchone()['pid']
+                expense_result = conn.execute(query_expenses, (row['group_name'], row['amount'], category_id, payment_method_id, row['expense_date'], row['expense_description']))
+
+                geid = expense_result.lastrowid  # Get the last inserted expense ID
+
+                # Insert tags for the expense
+                tags = row['tags'].split(', ')
+                for tag in tags:
+                    tag_id = conn.execute("SELECT tid FROM tags WHERE tag_name = ?", (tag,)).fetchone()['tid']
+                    query_tags = """
+                        INSERT INTO group_expense_tags (geid, tid)
+                        VALUES (?, ?)
+                    """
+                    conn.execute(query_tags, (geid, tag_id))
+
+                # Insert split users for the expense
+                usernames = row['usernames'].split(', ')
+                split_amounts = row['split_amount'].split(', ')
+                for username, split_amount in zip(usernames, split_amounts):
+                    user_id = conn.execute("SELECT uid FROM users WHERE username = ?", (username,)).fetchone()['uid']
+                    query_split_users = """
+                        INSERT INTO split_users (geid, uid, split_amount)
+                        VALUES (?, ?, ?)
+                    """
+                    conn.execute(query_split_users, (geid, user_id, float(split_amount)))
+
+        print(f"Group data successfully imported from {file_path}")
+        return True
+
+    except Exception as e:
+        print(f"Error importing group data: {str(e)}")
+        return False
