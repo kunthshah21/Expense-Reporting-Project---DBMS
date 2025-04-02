@@ -188,6 +188,23 @@ def process_command(cmd):
                         filters[key.replace("-", "_")] = value
             commands.list_expenses(filters)
 
+        elif command == "update_expense":
+            if len(parts) == 4:
+                try:
+                    expense_id = int(parts[1])
+                    field = parts[2].lower()
+                    new_value = parts[3]
+                    
+                    if commands.update_expense(expense_id, field, new_value):
+                        print(f"Expense {expense_id} updated successfully")
+                    else:
+                        print("Failed to update expense")
+                except ValueError:
+                    print("Invalid expense ID. Must be a number")
+            else:
+                print("Usage: update_expense <expense_id> <field> <new_value>")
+                print("Valid fields: amount, date, description, category, payment_method, tags")
+
         # Input format: add_tag <tag_name>
         elif command == "add_tag":
             if not check_login():
