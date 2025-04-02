@@ -609,7 +609,7 @@ def import_expenses(file_path):
         return False
 
 def export_csv(file_path, sort_field):
-    valid_fields = ['date', 'amount', 'category', 'payment_method', 'tags']
+    valid_fields = ['date', 'amount', 'category', 'payment_method', 'tags', 'user']
     sort_field = sort_field.lower()
     
     if sort_field not in valid_fields:
@@ -618,18 +618,34 @@ def export_csv(file_path, sort_field):
 
     try:
         conn = get_db_connection()
-        query = """
-            SELECT e.eid, e.amount, c.category_name, p.method, e.date, e.description,
-                   GROUP_CONCAT(t.tag_name, ', ') AS tags
-            FROM expenses e
-            JOIN categories c ON e.cid = c.cid
-            JOIN payment_methods p ON e.pid = p.pid
-            LEFT JOIN expenses_tags et ON e.eid = et.eid
-            LEFT JOIN tags t ON et.tid = t.tid
-            WHERE e.uid = ?
-            GROUP BY e.eid
-        """
-        expenses = conn.execute(query, (current_user['uid'],)).fetchall()
+        
+        # Different queries for admin and regular users
+        if current_user.get('role') == 'Admin':
+            query = """
+                SELECT e.eid, e.amount, c.category_name, p.method, e.date, e.description,
+                       GROUP_CONCAT(t.tag_name, ', ') AS tags, u.username as user
+                FROM expenses e
+                JOIN categories c ON e.cid = c.cid
+                JOIN payment_methods p ON e.pid = p.pid
+                JOIN users u ON e.uid = u.uid
+                LEFT JOIN expenses_tags et ON e.eid = et.eid
+                LEFT JOIN tags t ON et.tid = t.tid
+                GROUP BY e.eid
+            """
+            expenses = conn.execute(query).fetchall()
+        else:
+            query = """
+                SELECT e.eid, e.amount, c.category_name, p.method, e.date, e.description,
+                       GROUP_CONCAT(t.tag_name, ', ') AS tags
+                FROM expenses e
+                JOIN categories c ON e.cid = c.cid
+                JOIN payment_methods p ON e.pid = p.pid
+                LEFT JOIN expenses_tags et ON e.eid = et.eid
+                LEFT JOIN tags t ON et.tid = t.tid
+                WHERE e.uid = ?
+                GROUP BY e.eid
+            """
+            expenses = conn.execute(query, (current_user['uid'],)).fetchall()
 
         # Sort expenses
         sorted_expenses = sorted(
@@ -640,25 +656,43 @@ def export_csv(file_path, sort_field):
                 x['category_name'] if sort_field == 'category' else
                 x['method'] if sort_field == 'payment_method' else
                 x['tags'] if sort_field == 'tags' else
+                x.get('user', '') if sort_field == 'user' else
                 ""
             )
         )
 
         with open(file_path, 'w', newline='') as f:
             writer = csv.writer(f)
-            writer.writerow(['ID', 'Amount', 'Category', 'Payment Method', 
-                           'Date', 'Description', 'Tags'])
-            
-            for exp in sorted_expenses:
-                writer.writerow([
-                    exp['eid'],
-                    exp['amount'],
-                    exp['category_name'],
-                    exp['method'],
-                    exp['date'],
-                    exp['description'],
-                    exp['tags'] or ''
-                ])
+            # Different headers for admin and regular users
+            if current_user.get('role') == 'Admin':
+                writer.writerow(['ID', 'User', 'Amount', 'Category', 'Payment Method', 
+                               'Date', 'Description', 'Tags'])
+                
+                for exp in sorted_expenses:
+                    writer.writerow([
+                        exp['eid'],
+                        exp['user'],
+                        exp['amount'],
+                        exp['category_name'],
+                        exp['method'],
+                        exp['date'],
+                        exp['description'],
+                        exp['tags'] or ''
+                    ])
+            else:
+                writer.writerow(['ID', 'Amount', 'Category', 'Payment Method', 
+                               'Date', 'Description', 'Tags'])
+                
+                for exp in sorted_expenses:
+                    writer.writerow([
+                        exp['eid'],
+                        exp['amount'],
+                        exp['category_name'],
+                        exp['method'],
+                        exp['date'],
+                        exp['description'],
+                        exp['tags'] or ''
+                    ])
 
         return True
     except Exception as e:
