@@ -28,8 +28,10 @@ def login(username, password):
     finally:
         conn.close()
 
+# Replace current logout() with:
 def logout():
     current_user.clear()
+    current_user.update({'uid': None, 'username': None, 'role': None})
 #endregion
 
 #region User Management
@@ -96,15 +98,13 @@ def add_payment_method(method):
 
 #region Expense Management
 def add_expense(amount, category, payment_method, date, description, tags):
-    
-    # category = category.strip().lower()
-    # print(category)
-    # payment_method = payment_method.strip().lower()
-    # print(amount, category, payment_method, date, description, tags)
-
     try:
         if not current_user.get('uid'):
             print("Error: User not logged in.")
+            return False
+            
+        if amount <= 0:
+            print("Error: Amount must be greater than 0")
             return False
         
         conn = get_db_connection()
@@ -609,7 +609,7 @@ def import_expenses(file_path):
         return False
 
 def export_csv(file_path, sort_field):
-    valid_fields = ['date', 'amount', 'category', 'payment_method', 'tags']
+    valid_fields = ['date', 'amount', 'category', 'payment_method', 'tags', 'user']
     sort_field = sort_field.lower()
     
     if sort_field not in valid_fields:
@@ -618,18 +618,34 @@ def export_csv(file_path, sort_field):
 
     try:
         conn = get_db_connection()
-        query = """
-            SELECT e.eid, e.amount, c.category_name, p.method, e.date, e.description,
-                   GROUP_CONCAT(t.tag_name, ', ') AS tags
-            FROM expenses e
-            JOIN categories c ON e.cid = c.cid
-            JOIN payment_methods p ON e.pid = p.pid
-            LEFT JOIN expenses_tags et ON e.eid = et.eid
-            LEFT JOIN tags t ON et.tid = t.tid
-            WHERE e.uid = ?
-            GROUP BY e.eid
-        """
-        expenses = conn.execute(query, (current_user['uid'],)).fetchall()
+        
+        # Different queries for admin and regular users
+        if current_user.get('role') == 'Admin':
+            query = """
+                SELECT e.eid, e.amount, c.category_name, p.method, e.date, e.description,
+                       GROUP_CONCAT(t.tag_name, ', ') AS tags, u.username as user
+                FROM expenses e
+                JOIN categories c ON e.cid = c.cid
+                JOIN payment_methods p ON e.pid = p.pid
+                JOIN users u ON e.uid = u.uid
+                LEFT JOIN expenses_tags et ON e.eid = et.eid
+                LEFT JOIN tags t ON et.tid = t.tid
+                GROUP BY e.eid
+            """
+            expenses = conn.execute(query).fetchall()
+        else:
+            query = """
+                SELECT e.eid, e.amount, c.category_name, p.method, e.date, e.description,
+                       GROUP_CONCAT(t.tag_name, ', ') AS tags
+                FROM expenses e
+                JOIN categories c ON e.cid = c.cid
+                JOIN payment_methods p ON e.pid = p.pid
+                LEFT JOIN expenses_tags et ON e.eid = et.eid
+                LEFT JOIN tags t ON et.tid = t.tid
+                WHERE e.uid = ?
+                GROUP BY e.eid
+            """
+            expenses = conn.execute(query, (current_user['uid'],)).fetchall()
 
         # Sort expenses
         sorted_expenses = sorted(
@@ -640,25 +656,43 @@ def export_csv(file_path, sort_field):
                 x['category_name'] if sort_field == 'category' else
                 x['method'] if sort_field == 'payment_method' else
                 x['tags'] if sort_field == 'tags' else
+                x.get('user', '') if sort_field == 'user' else
                 ""
             )
         )
 
         with open(file_path, 'w', newline='') as f:
             writer = csv.writer(f)
-            writer.writerow(['ID', 'Amount', 'Category', 'Payment Method', 
-                           'Date', 'Description', 'Tags'])
-            
-            for exp in sorted_expenses:
-                writer.writerow([
-                    exp['eid'],
-                    exp['amount'],
-                    exp['category_name'],
-                    exp['method'],
-                    exp['date'],
-                    exp['description'],
-                    exp['tags'] or ''
-                ])
+            # Different headers for admin and regular users
+            if current_user.get('role') == 'Admin':
+                writer.writerow(['ID', 'User', 'Amount', 'Category', 'Payment Method', 
+                               'Date', 'Description', 'Tags'])
+                
+                for exp in sorted_expenses:
+                    writer.writerow([
+                        exp['eid'],
+                        exp['user'],
+                        exp['amount'],
+                        exp['category_name'],
+                        exp['method'],
+                        exp['date'],
+                        exp['description'],
+                        exp['tags'] or ''
+                    ])
+            else:
+                writer.writerow(['ID', 'Amount', 'Category', 'Payment Method', 
+                               'Date', 'Description', 'Tags'])
+                
+                for exp in sorted_expenses:
+                    writer.writerow([
+                        exp['eid'],
+                        exp['amount'],
+                        exp['category_name'],
+                        exp['method'],
+                        exp['date'],
+                        exp['description'],
+                        exp['tags'] or ''
+                    ])
 
         return True
     except Exception as e:
@@ -682,8 +716,22 @@ def list_payment_methods():
     finally:
         conn.close()
 
+# Add this helper function at the top
+def validate_date(date_str):
+    try:
+        datetime.strptime(date_str, '%Y-%m-%d')
+        return True
+    except ValueError:
+        return False
+
 # region Reports
 def report_top_expenses(n, start_date, end_date):
+    if not validate_date(start_date) or not validate_date(end_date):
+        print("Invalid date format. Use YYYY-MM-DD")
+        return False
+    if start_date > end_date:
+        print("Error: Start date must be before end date")
+        return False
     try:
         conn = get_db_connection()
         query = """
@@ -825,6 +873,10 @@ def report_monthly_category_spending():
 
 def report_highest_spender_per_month():
     try:
+        if current_user.get('role') != 'Admin':
+            print("Permission denied: Admin access required")
+            return False
+            
         conn = get_db_connection()
         query = """
             WITH monthly_spending AS (
@@ -867,23 +919,29 @@ def report_highest_spender_per_month():
 def report_frequent_category():
     try:
         conn = get_db_connection()
+        # Get all categories with max count
         query = """
-            SELECT c.category_name, COUNT(*) AS count
-            FROM expenses e
-            JOIN categories c ON e.cid = c.cid
-            WHERE e.uid = ?
-            GROUP BY c.category_name
-            ORDER BY count DESC
-            LIMIT 1
+            WITH category_counts AS (
+                SELECT c.category_name, COUNT(*) AS count,
+                       MAX(COUNT(*)) OVER () AS max_count
+                FROM expenses e
+                JOIN categories c ON e.cid = c.cid
+                WHERE e.uid = ?
+                GROUP BY c.category_name
+            )
+            SELECT category_name, count
+            FROM category_counts
+            WHERE count = max_count
         """
-        result = conn.execute(query, (current_user['uid'],)).fetchone()
+        results = conn.execute(query, (current_user['uid'],)).fetchall()
         
-        if not result:
+        if not results:
             print("No expense data available")
             return
 
-        print(f"\nMost Frequent Category: {result['category_name']}")
-        print(f"Number of Expenses: {result['count']}")
+        print("\nMost Frequent Categories:")
+        for row in results:
+            print(f"{row['category_name']}: {row['count']} expenses")
         return True
     except Exception as e:
         print(f"Error generating report: {str(e)}")

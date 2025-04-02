@@ -2,6 +2,13 @@ from app import commands
 import shlex
 from datetime import datetime
 
+# Add a helper function to check login status
+def check_login():
+    if not commands.current_user or not commands.current_user.get('uid'):
+        print("You must be logged in to use this command.")
+        return False
+    return True
+
 # Modify the main_cli function's loop:
 
 
@@ -52,6 +59,9 @@ def process_command(cmd):
 
         # User management
         elif command == "add_user":
+            if not check_login():
+                return
+                
             if len(parts) == 4:
                 if commands.add_user(parts[1], parts[2], parts[3]):
                     print("User added")
@@ -63,6 +73,9 @@ def process_command(cmd):
         # Command: Update User
         # Usage: update_user <username> <field> <new_value>
         elif command == "update_user":
+            if not check_login():
+                return
+                
             if len(parts) == 4:
                 if commands.update_user(parts[1], parts[2], parts[3]):
                     print(f"User '{parts[1]}' updated successfully.")
@@ -74,6 +87,9 @@ def process_command(cmd):
         # Command: Delete User
         # Usage: delete_user <username>
         elif command == "delete_user":
+            if not check_login():
+                return
+                
             if len(parts) == 2:
                 if commands.delete_user(parts[1]):
                     print(f"User '{parts[1]}' deleted.")
@@ -83,6 +99,9 @@ def process_command(cmd):
                 print("Usage: delete_user <username>")
 
         elif command == "list_users":
+            if not check_login():
+                return
+                
             if commands.current_user.get('role') == 'Admin':
                 users = commands.list_users()
                 for user in users:
@@ -93,6 +112,9 @@ def process_command(cmd):
 
         # Category management
         elif command == "add_category":
+            if not check_login():
+                return
+                
             if len(parts) == 2:
                 if commands.current_user.get('role') == 'Admin':
                     category_lower = parts[1].strip().lower()
@@ -107,6 +129,9 @@ def process_command(cmd):
 
         # Payment method management
         elif command == "add_payment_method":
+            if not check_login():
+                return
+                
             if len(parts) == 2:
                 if commands.current_user.get('role') == 'Admin':
                     if commands.add_payment_method(parts[1]):
@@ -120,11 +145,15 @@ def process_command(cmd):
 
         # In process_command() function:
         elif command == "add_expense":
+            if not check_login():
+                return
+                
             if len(parts) >= 6:
                 try:
                     amount = float(parts[1])
                     if amount <= 0:
-                        raise ValueError
+                        print("Amount must be greater than 0")
+                        return
                     category = parts[2].strip().lower()
                     payment_method = parts[3].strip().lower()
                     date = datetime.strptime(parts[4], '%Y-%m-%d').date()
@@ -148,17 +177,72 @@ def process_command(cmd):
 
                 # In process_command() for list_expenses:
         elif command == "list_expenses":
+            if not commands.current_user or not commands.current_user.get('uid'):
+                print("Please login first")
+                return
+            
             filters = {}
             for arg in parts[1:]:
                 if arg.startswith("--"):
                     key_value = arg[2:].split("=", 1)
                     if len(key_value) == 2:
                         key, value = key_value
-                        filters[key.replace("-", "_")] = value
+                        # Handle amount range special case
+                        if key == "amount":
+                            if '-' in value:
+                                min_val, max_val = value.split('-', 1)
+                                filters['min_amount'] = min_val
+                                filters['max_amount'] = max_val
+                            else:
+                                print("Invalid amount format. Use min-max")
+                                return
+                        else:
+                            filters[key.replace("-", "_")] = value
             commands.list_expenses(filters)
+
+        # Replace current update_expense handler with:
+        elif command == "update_expense":
+            if not check_login(): return
+            
+            if len(parts) == 4:
+                try:
+                    expense_id = int(parts[1])
+                    field = parts[2].lower()
+                    new_value = parts[3]
+                    
+                    if field == 'tags':  # Special handling for tags
+                        new_value = new_value.split(',')
+                    
+                    if commands.update_expense(expense_id, field, new_value):
+                        print(f"Expense {expense_id} updated")
+                    else:
+                        print("Update failed. Check if you own this expense.")
+                except ValueError:
+                    print("Error: Expense ID must be a number")
+            else:
+                print("Usage: update_expense <ID> <field> <new_value>")
+                print("Fields: amount, date, description, category, payment_method, tags")
+
+                # Replace current delete_expense handler with:
+        elif command == "delete_expense":
+            if not check_login(): return
+            
+            if len(parts) == 2:
+                try:
+                    if commands.delete_expense(int(parts[1])):
+                        print("Expense deleted")
+                    else:
+                        print("Delete failed. Check if you own this expense.")
+                except ValueError:
+                    print("Error: Expense ID must be a number")
+            else:
+                print("Usage: delete_expense <ID>")
 
         # Input format: add_tag <tag_name>
         elif command == "add_tag":
+            if not check_login():
+                return
+                
             if len(parts) == 2:
                 if commands.add_tag(parts[1]):
                     print(f"Tag '{parts[1]}' added.")
@@ -170,6 +254,9 @@ def process_command(cmd):
         # Command: Delete Tag
         # Usage: delete_tag <tag_name>
         elif command == "delete_tag":
+            if not check_login():
+                return
+                
             if len(parts) == 2:
                 if commands.delete_tag(parts[1]):
                     print(f"Tag '{parts[1]}' deleted.")
@@ -180,6 +267,9 @@ def process_command(cmd):
 
         # Input format: add_group <group_name> <description>
         elif command == "add_group":
+            if not check_login():
+                return
+                
             if len(parts) >= 3:
                 group_name = parts[1]
                 description = ' '.join(parts[2:])
@@ -192,6 +282,9 @@ def process_command(cmd):
 
         # add group expense
         elif command == "add_group_expense":
+            if not check_login():
+                return
+                
             if len(parts) >= 7:
                 # Extract required parameters
                 amount = parts[1]
@@ -232,6 +325,9 @@ def process_command(cmd):
         # Command: Add User to Group
         # Usage: add_user_to_group <username> <group_name>
         elif command == "add_user_to_group":
+            if not check_login():
+                return
+                
             if len(parts) == 3:
                 if commands.add_user_to_group(parts[1], parts[2]):
                     print(f"User '{parts[1]}' added to group '{parts[2]}'.")
@@ -244,6 +340,9 @@ def process_command(cmd):
 
                 # In process_command() function:
         elif command == "import_expenses":
+            if not check_login():
+                return
+                
             if len(parts) == 2:
                 if commands.import_expenses(parts[1]):
                     print("Import completed")
@@ -251,6 +350,9 @@ def process_command(cmd):
                 print("Usage: import_expenses <file_path>")
 
         elif command == "export_csv":
+            if not check_login():
+                return
+                
             if len(parts) >= 4 and parts[-2] == "sort-on":
                 file_path = ' '.join(parts[1:-2]).rstrip(',')
                 sort_field = parts[-1]
@@ -260,12 +362,18 @@ def process_command(cmd):
                 print("Usage: export_csv <file_path>, sort-on <field_name>")
 
         elif command == "list_categories":
+            if not check_login():
+                return
+                
             categories = commands.list_categories()
             print("Categories:")
             for idx, cat in enumerate(categories, 1):
                 print(f"{idx}. {cat['category_name']}")
 
         elif command == "list_payment_methods":
+            if not check_login():
+                return
+                
             methods = commands.list_payment_methods()
             print("Payment Methods:")
             for idx, method in enumerate(methods, 1):
@@ -273,14 +381,28 @@ def process_command(cmd):
 
                 # In process_command() function:
         elif command == "report":
+            if not check_login(): return
+            
             if len(parts) < 2:
-                print("Invalid report command")
+                print("Available reports:")
+                print("- top_expenses <N> date-range <start> to <end>")
+                print("- category_spending <category>")
+                print("- above_average_expenses")
+                print("- monthly_category_spending")
+                print("- highest_spender_per_month (Admin only)")
+                print("- frequent_category")
+                print("- payment_method_usage")
+                print("- tag_expenses")
                 return
-
+            
             subcmd = parts[1].lower()
-
+            
             try:
                 if subcmd == "top_expenses":
+                    if len(parts) < 5 or parts[3] != "date-range":
+                        print("Error: Invalid format. Use:")
+                        print("report top_expenses <N> date-range <YYYY-MM-DD> to <YYYY-MM-DD>")
+                        return
                     if len(parts) >= 5 and parts[2].isdigit() and parts[3] == "date-range":
                         n = int(parts[2])
                         # Join the remaining parts to handle dates that might contain spaces
@@ -430,35 +552,53 @@ def process_command(cmd):
 
 def show_help():
     print("""
-    Available Commands:
-    ------------------
-    Authentication:
-    login <username> <password>
-    logout
-    
-    User Management (Admin only):
-    add_user <username> <password> <role>
-    list_users
-    
-    Category Management (Admin only):
-    add_category <name>
-    list_categories
-    
-    Payment Methods (Admin only):
-    add_payment_method <name>
-    list_payment_methods
-    
-    Expense Management:
-    add_expense <amount> <category> <payment_method> <date> <description> <tag>
+    Expense Management System - Available Commands
+    ==============================================
+
+    [Authentication]
+    login <username> <password>    - Authenticate user
+    logout                         - End current session
+
+    [User Management (Admin only)]
+    add_user <username> <password> <role>  - Create new user (Admin/User)
+    update_user <username> <field> <value> - Update user (fields: password, role)
+    delete_user <username>         - Remove user
+    list_users                     - List all users (Admin only)
+
+    [Category Management (Admin only)]
+    add_category <name>            - Create new expense category
+    list_categories                - Show available categories
+
+    [Payment Methods (Admin only)]
+    add_payment_method <name>      - Add new payment method
+    list_payment_methods           - Show available payment methods
+
+    [Expense Management]
+    add_expense <amount> <category> <payment_method> <YYYY-MM-DD> <description> [tags]
+                                  - Record new expense
     update_expense <id> <field> <value>
-    delete_expense <id>
-    list_expenses [--category=] [--date=] [--min-amount=] [--max-amount=] [--payment=] [--tag=]
-    
-    Group commands: 
+                                  - Modify expense (fields: amount, date, description, 
+                                    category, payment_method, tags)
+    delete_expense <id>           - Remove expense
+    list_expenses [filters]       - View expenses with optional filters:
+                                      --category=<name>
+                                      --date=<YYYY-MM-DD>
+                                      --min-amount=<value>
+                                      --max-amount=<value>
+                                      --payment-method=<name>
+                                      --tag=<tag>
+                                      --amount=<min>-<max>
+
+    [Group Management]
+    add_group <name> <description> - Create new group
+    add_group_expense <amount> <group> <category> <payment> <date> <desc> <tags>|<users>
+                                  - Add group expense (tags comma-separated before |)
+    add_user_to_group <user> <group> - Add member to group
+        Group commands: 
     add_group <group_name> <description>
     add_group_expense add_group_expense <amount> <group_name> <category> <payment_method> <date> <description> <comma-separated-tags> | <comma-separated-usernames>
     
-    Group Queries:
+    Other Group Queries:
         list_groups
         report_group_expenses <group_name> [--category=<category>] [--date=<date>] [--min-amount=<amount>] [--max-amount=<amount>] [--tag=<tag>] 
         report_group_tag_usage
@@ -469,11 +609,41 @@ def show_help():
 
     Import/Export:
     import_expenses <file.csv>
+
+    [Import/Export]
+    import_expenses <file.csv>    - Bulk import from CSV
     export_csv <file.csv> sort-on <field>
-    
-    System:
-    help
-    exit
+                                  - Export sorted data (fields: date, amount, category, 
+                                    payment_method, tags)
+
+    [Reports]
+    report top_expenses <N> date-range <start> to <end>
+                                  - Top N expenses in date range
+    report category_spending <category>
+                                  - Total spending for specific category
+    report above_average_expenses - Expenses exceeding category average
+    report monthly_category_spending
+                                  - Monthly spending per category
+    report highest_spender_per_month
+                                  - Top spender each month (Admin only)
+    report frequent_category      - Most used expense category
+    report payment_method_usage   - Spending breakdown by payment method
+    report tag_expenses           - Expense count per tag
+
+    [System]
+    help                         - Show this help message
+    exit                         - Exit the program
+
+    [Filter Examples]
+    list_expenses --category=food --min-amount=100
+    list_expenses --date=2024-03-15 --tag=urgent
+    list_expenses --amount=50-200 --payment-method=credit_card
+
+    [Notes]
+    - Dates must be in YYYY-MM-DD format
+    - Admin privileges required for user/category/payment management
+    - Tags are comma-separated (e.g., food,travel)
+    - Amount ranges use '-' (e.g., 100-500)
     """)
 
 
