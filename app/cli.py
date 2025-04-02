@@ -375,17 +375,28 @@ def process_command(cmd):
 
                 # In process_command() function:
         elif command == "report":
-            if not check_login():
-                return
-                
+            if not check_login(): return
+            
             if len(parts) < 2:
-                print("Invalid report command")
+                print("Available reports:")
+                print("- top_expenses <N> date-range <start> to <end>")
+                print("- category_spending <category>")
+                print("- above_average_expenses")
+                print("- monthly_category_spending")
+                print("- highest_spender_per_month (Admin only)")
+                print("- frequent_category")
+                print("- payment_method_usage")
+                print("- tag_expenses")
                 return
-
+            
             subcmd = parts[1].lower()
-
+            
             try:
                 if subcmd == "top_expenses":
+                    if len(parts) < 5 or parts[3] != "date-range":
+                        print("Error: Invalid format. Use:")
+                        print("report top_expenses <N> date-range <YYYY-MM-DD> to <YYYY-MM-DD>")
+                        return
                     if len(parts) >= 5 and parts[2].isdigit() and parts[3] == "date-range":
                         n = int(parts[2])
                         # Join the remaining parts to handle dates that might contain spaces
@@ -451,42 +462,83 @@ def process_command(cmd):
 
 def show_help():
     print("""
-    Available Commands:
-    ------------------
-    Authentication:
-    login <username> <password>
-    logout
-    
-    User Management (Admin only):
-    add_user <username> <password> <role>
-    list_users
-    
-    Category Management (Admin only):
-    add_category <name>
-    list_categories
-    
-    Payment Methods (Admin only):
-    add_payment_method <name>
-    list_payment_methods
-    
-    Expense Management:
-    add_expense <amount> <category> <payment_method> <date> <description> <tag>
+    Expense Management System - Available Commands
+    ==============================================
+
+    [Authentication]
+    login <username> <password>    - Authenticate user
+    logout                         - End current session
+
+    [User Management (Admin only)]
+    add_user <username> <password> <role>  - Create new user (Admin/User)
+    update_user <username> <field> <value> - Update user (fields: password, role)
+    delete_user <username>         - Remove user
+    list_users                     - List all users (Admin only)
+
+    [Category Management (Admin only)]
+    add_category <name>            - Create new expense category
+    list_categories                - Show available categories
+
+    [Payment Methods (Admin only)]
+    add_payment_method <name>      - Add new payment method
+    list_payment_methods           - Show available payment methods
+
+    [Expense Management]
+    add_expense <amount> <category> <payment_method> <YYYY-MM-DD> <description> [tags]
+                                  - Record new expense
     update_expense <id> <field> <value>
-    delete_expense <id>
-    list_expenses [--category=] [--date=] [--min-amount=] [--max-amount=] [--payment=] [--tag=]
-    
-    Group commands: 
-    add_group <group_name> <description>
-    add_group_expense add_group_expense <amount> <group_name> <category> <payment_method> <date> <description> <comma-separated-tags> | <comma-separated-usernames>
-    
-          
-    Import/Export:
-    import_expenses <file.csv>
+                                  - Modify expense (fields: amount, date, description, 
+                                    category, payment_method, tags)
+    delete_expense <id>           - Remove expense
+    list_expenses [filters]       - View expenses with optional filters:
+                                      --category=<name>
+                                      --date=<YYYY-MM-DD>
+                                      --min-amount=<value>
+                                      --max-amount=<value>
+                                      --payment-method=<name>
+                                      --tag=<tag>
+                                      --amount=<min>-<max>
+
+    [Group Management]
+    add_group <name> <description> - Create new group
+    add_group_expense <amount> <group> <category> <payment> <date> <desc> <tags>|<users>
+                                  - Add group expense (tags comma-separated before |)
+    add_user_to_group <user> <group> - Add member to group
+
+    [Import/Export]
+    import_expenses <file.csv>    - Bulk import from CSV
     export_csv <file.csv> sort-on <field>
-    
-    System:
-    help
-    exit
+                                  - Export sorted data (fields: date, amount, category, 
+                                    payment_method, tags)
+
+    [Reports]
+    report top_expenses <N> date-range <start> to <end>
+                                  - Top N expenses in date range
+    report category_spending <category>
+                                  - Total spending for specific category
+    report above_average_expenses - Expenses exceeding category average
+    report monthly_category_spending
+                                  - Monthly spending per category
+    report highest_spender_per_month
+                                  - Top spender each month (Admin only)
+    report frequent_category      - Most used expense category
+    report payment_method_usage   - Spending breakdown by payment method
+    report tag_expenses           - Expense count per tag
+
+    [System]
+    help                         - Show this help message
+    exit                         - Exit the program
+
+    [Filter Examples]
+    list_expenses --category=food --min-amount=100
+    list_expenses --date=2024-03-15 --tag=urgent
+    list_expenses --amount=50-200 --payment-method=credit_card
+
+    [Notes]
+    - Dates must be in YYYY-MM-DD format
+    - Admin privileges required for user/category/payment management
+    - Tags are comma-separated (e.g., food,travel)
+    - Amount ranges use '-' (e.g., 100-500)
     """)
 
 
