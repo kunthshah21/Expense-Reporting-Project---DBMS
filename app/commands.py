@@ -782,4 +782,177 @@ def report_above_average_expenses():
     except Exception as e:
         print(f"Error generating report: {str(e)}")
         return False
+
+def report_monthly_category_spending():
+    try:
+        conn = get_db_connection()
+        query = """
+            SELECT 
+                strftime('%Y-%m', e.date) AS month,
+                c.category_name,
+                SUM(e.amount) AS total,
+                COUNT(e.eid) AS count
+            FROM expenses e
+            JOIN categories c ON e.cid = c.cid
+            WHERE e.uid = ?
+            GROUP BY month, c.category_name
+            ORDER BY month DESC, total DESC
+        """
+        results = conn.execute(query, (current_user['uid'],)).fetchall()
+        
+        if not results:
+            print("No spending data available")
+            return
+
+        print("\nMonthly Category Spending:")
+        print("{:<10} {:<15} {:<15} {:<10}".format(
+            "Month", "Category", "Total Amount", "Expenses Count"))
+        print("-" * 50)
+        for row in results:
+            print("{:<10} {:<15} ₹{:<13.2f} {:<10}".format(
+                row['month'],
+                row['category_name'],
+                row['total'],
+                row['count']
+            ))
+        return True
+    except Exception as e:
+        print(f"Error generating report: {str(e)}")
+        return False
+
+def report_highest_spender_per_month():
+    try:
+        conn = get_db_connection()
+        query = """
+            WITH monthly_spending AS (
+                SELECT
+                    strftime('%Y-%m', e.date) AS month,
+                    u.username,
+                    SUM(e.amount) AS total,
+                    RANK() OVER (PARTITION BY strftime('%Y-%m', e.date) 
+                                 ORDER BY SUM(e.amount) DESC) AS rank
+                FROM expenses e
+                JOIN users u ON e.uid = u.uid
+                GROUP BY month, u.username
+            )
+            SELECT month, username, total
+            FROM monthly_spending
+            WHERE rank = 1
+            ORDER BY month DESC
+        """
+        results = conn.execute(query).fetchall()
+        
+        if not results:
+            print("No spending data available")
+            return
+
+        print("\nHighest Spender Per Month:")
+        print("{:<10} {:<15} {:<15}".format(
+            "Month", "Username", "Total Spending"))
+        print("-" * 40)
+        for row in results:
+            print("{:<10} {:<15} ₹{:<13.2f}".format(
+                row['month'],
+                row['username'],
+                row['total']
+            ))
+        return True
+    except Exception as e:
+        print(f"Error generating report: {str(e)}")
+        return False
+
+def report_frequent_category():
+    try:
+        conn = get_db_connection()
+        query = """
+            SELECT c.category_name, COUNT(*) AS count
+            FROM expenses e
+            JOIN categories c ON e.cid = c.cid
+            WHERE e.uid = ?
+            GROUP BY c.category_name
+            ORDER BY count DESC
+            LIMIT 1
+        """
+        result = conn.execute(query, (current_user['uid'],)).fetchone()
+        
+        if not result:
+            print("No expense data available")
+            return
+
+        print(f"\nMost Frequent Category: {result['category_name']}")
+        print(f"Number of Expenses: {result['count']}")
+        return True
+    except Exception as e:
+        print(f"Error generating report: {str(e)}")
+        return False
+
+def report_payment_method_usage():
+    try:
+        conn = get_db_connection()
+        query = """
+            SELECT 
+                p.method,
+                SUM(e.amount) AS total_spent,
+                COUNT(e.eid) AS expense_count
+            FROM expenses e
+            JOIN payment_methods p ON e.pid = p.pid
+            WHERE e.uid = ?
+            GROUP BY p.method
+            ORDER BY total_spent DESC
+        """
+        results = conn.execute(query, (current_user['uid'],)).fetchall()
+        
+        if not results:
+            print("No payment method usage data available")
+            return
+
+        print("\nPayment Method Usage Breakdown:")
+        print("{:<15} {:<15} {:<15}".format(
+            "Method", "Total Spent", "Expense Count"))
+        print("-" * 45)
+        for row in results:
+            print("{:<15} ₹{:<13.2f} {:<15}".format(
+                row['method'],
+                row['total_spent'],
+                row['expense_count']
+            ))
+        return True
+    except Exception as e:
+        print(f"Error generating report: {str(e)}")
+        return False
+
+def report_tag_expenses():
+    try:
+        conn = get_db_connection()
+        query = """
+            SELECT 
+                t.tag_name,
+                COUNT(et.eid) AS expense_count
+            FROM tags t
+            LEFT JOIN expenses_tags et ON t.tid = et.tid
+            WHERE EXISTS (
+                SELECT 1 FROM expenses e
+                WHERE e.eid = et.eid AND e.uid = ?
+            )
+            GROUP BY t.tag_name
+            ORDER BY expense_count DESC
+        """
+        results = conn.execute(query, (current_user['uid'],)).fetchall()
+        
+        if not results:
+            print("No tag usage data available")
+            return
+
+        print("\nTag Expense Counts:")
+        print("{:<20} {:<15}".format("Tag", "Expense Count"))
+        print("-" * 35)
+        for row in results:
+            print("{:<20} {:<15}".format(
+                row['tag_name'],
+                row['expense_count'] or 0
+            ))
+        return True
+    except Exception as e:
+        print(f"Error generating report: {str(e)}")
+        return False
 # endregion

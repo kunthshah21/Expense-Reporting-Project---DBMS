@@ -300,6 +300,25 @@ def process_command(cmd):
                 elif subcmd == "above_average_expenses":
                     commands.report_above_average_expenses()
 
+                elif subcmd == "monthly_category_spending":
+                    commands.report_monthly_category_spending()
+
+                elif subcmd == "highest_spender_per_month":
+                    # Check admin role using commands module's current_user
+                    if not commands.current_user or commands.current_user.get('role') != 'Admin':
+                        print("This report is only available for admins")
+                    else:
+                        commands.report_highest_spender_per_month()
+
+                elif subcmd == "frequent_category":
+                    commands.report_frequent_category()
+
+                elif subcmd == "payment_method_usage":
+                    commands.report_payment_method_usage()
+                
+                elif subcmd == "tag_expenses":
+                    commands.report_tag_expenses()
+
                 else:
                     print("Invalid report type")
 
