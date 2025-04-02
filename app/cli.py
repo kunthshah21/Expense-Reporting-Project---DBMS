@@ -2,6 +2,13 @@ from app import commands
 import shlex
 from datetime import datetime
 
+# Add a helper function to check login status
+def check_login():
+    if not commands.current_user or not commands.current_user.get('uid'):
+        print("You must be logged in to use this command.")
+        return False
+    return True
+
 # Modify the main_cli function's loop:
 
 
@@ -52,6 +59,9 @@ def process_command(cmd):
 
         # User management
         elif command == "add_user":
+            if not check_login():
+                return
+                
             if len(parts) == 4:
                 if commands.add_user(parts[1], parts[2], parts[3]):
                     print("User added")
@@ -63,6 +73,9 @@ def process_command(cmd):
         # Command: Update User
         # Usage: update_user <username> <field> <new_value>
         elif command == "update_user":
+            if not check_login():
+                return
+                
             if len(parts) == 4:
                 if commands.update_user(parts[1], parts[2], parts[3]):
                     print(f"User '{parts[1]}' updated successfully.")
@@ -74,6 +87,9 @@ def process_command(cmd):
         # Command: Delete User
         # Usage: delete_user <username>
         elif command == "delete_user":
+            if not check_login():
+                return
+                
             if len(parts) == 2:
                 if commands.delete_user(parts[1]):
                     print(f"User '{parts[1]}' deleted.")
@@ -83,6 +99,9 @@ def process_command(cmd):
                 print("Usage: delete_user <username>")
 
         elif command == "list_users":
+            if not check_login():
+                return
+                
             if commands.current_user.get('role') == 'Admin':
                 users = commands.list_users()
                 for user in users:
@@ -93,6 +112,9 @@ def process_command(cmd):
 
         # Category management
         elif command == "add_category":
+            if not check_login():
+                return
+                
             if len(parts) == 2:
                 if commands.current_user.get('role') == 'Admin':
                     category_lower = parts[1].strip().lower()
@@ -107,6 +129,9 @@ def process_command(cmd):
 
         # Payment method management
         elif command == "add_payment_method":
+            if not check_login():
+                return
+                
             if len(parts) == 2:
                 if commands.current_user.get('role') == 'Admin':
                     if commands.add_payment_method(parts[1]):
@@ -120,6 +145,9 @@ def process_command(cmd):
 
                 # In process_command() function:
         elif command == "add_expense":
+            if not check_login():
+                return
+                
             if len(parts) >= 6:
                 try:
                     amount = float(parts[1])
@@ -148,6 +176,9 @@ def process_command(cmd):
 
                 # In process_command() for list_expenses:
         elif command == "list_expenses":
+            if not check_login():
+                return
+                
             filters = {}
             for arg in parts[1:]:
                 if arg.startswith("--"):
@@ -159,6 +190,9 @@ def process_command(cmd):
 
         # Input format: add_tag <tag_name>
         elif command == "add_tag":
+            if not check_login():
+                return
+                
             if len(parts) == 2:
                 if commands.add_tag(parts[1]):
                     print(f"Tag '{parts[1]}' added.")
@@ -170,6 +204,9 @@ def process_command(cmd):
         # Command: Delete Tag
         # Usage: delete_tag <tag_name>
         elif command == "delete_tag":
+            if not check_login():
+                return
+                
             if len(parts) == 2:
                 if commands.delete_tag(parts[1]):
                     print(f"Tag '{parts[1]}' deleted.")
@@ -180,6 +217,9 @@ def process_command(cmd):
 
         # Input format: add_group <group_name> <description>
         elif command == "add_group":
+            if not check_login():
+                return
+                
             if len(parts) >= 3:
                 group_name = parts[1]
                 description = ' '.join(parts[2:])
@@ -192,6 +232,9 @@ def process_command(cmd):
 
         # add group expense
         elif command == "add_group_expense":
+            if not check_login():
+                return
+                
             if len(parts) >= 7:
                 # Extract required parameters
                 amount = parts[1]
@@ -226,6 +269,9 @@ def process_command(cmd):
         # Command: Add User to Group
         # Usage: add_user_to_group <username> <group_name>
         elif command == "add_user_to_group":
+            if not check_login():
+                return
+                
             if len(parts) == 3:
                 if commands.add_user_to_group(parts[1], parts[2]):
                     print(f"User '{parts[1]}' added to group '{parts[2]}'.")
@@ -238,6 +284,9 @@ def process_command(cmd):
 
                 # In process_command() function:
         elif command == "import_expenses":
+            if not check_login():
+                return
+                
             if len(parts) == 2:
                 if commands.import_expenses(parts[1]):
                     print("Import completed")
@@ -245,6 +294,9 @@ def process_command(cmd):
                 print("Usage: import_expenses <file_path>")
 
         elif command == "export_csv":
+            if not check_login():
+                return
+                
             if len(parts) >= 4 and parts[-2] == "sort-on":
                 file_path = ' '.join(parts[1:-2]).rstrip(',')
                 sort_field = parts[-1]
@@ -254,12 +306,18 @@ def process_command(cmd):
                 print("Usage: export_csv <file_path>, sort-on <field_name>")
 
         elif command == "list_categories":
+            if not check_login():
+                return
+                
             categories = commands.list_categories()
             print("Categories:")
             for idx, cat in enumerate(categories, 1):
                 print(f"{idx}. {cat['category_name']}")
 
         elif command == "list_payment_methods":
+            if not check_login():
+                return
+                
             methods = commands.list_payment_methods()
             print("Payment Methods:")
             for idx, method in enumerate(methods, 1):
@@ -267,6 +325,9 @@ def process_command(cmd):
 
                 # In process_command() function:
         elif command == "report":
+            if not check_login():
+                return
+                
             if len(parts) < 2:
                 print("Invalid report command")
                 return
