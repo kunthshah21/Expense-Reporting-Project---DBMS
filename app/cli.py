@@ -199,39 +199,43 @@ def process_command(cmd):
                             filters[key.replace("-", "_")] = value
             commands.list_expenses(filters)
 
+        # Replace current update_expense handler with:
         elif command == "update_expense":
+            if not check_login(): return
+            
             if len(parts) == 4:
                 try:
                     expense_id = int(parts[1])
                     field = parts[2].lower()
                     new_value = parts[3]
                     
+                    if field == 'tags':  # Special handling for tags
+                        new_value = new_value.split(',')
+                    
                     if commands.update_expense(expense_id, field, new_value):
-                        print(f"Expense {expense_id} updated successfully")
+                        print(f"Expense {expense_id} updated")
                     else:
-                        print("Failed to update expense")
+                        print("Update failed. Check if you own this expense.")
                 except ValueError:
-                    print("Invalid expense ID. Must be a number")
+                    print("Error: Expense ID must be a number")
             else:
-                print("Usage: update_expense <expense_id> <field> <new_value>")
-                print("Valid fields: amount, date, description, category, payment_method, tags")
+                print("Usage: update_expense <ID> <field> <new_value>")
+                print("Fields: amount, date, description, category, payment_method, tags")
 
+                # Replace current delete_expense handler with:
         elif command == "delete_expense":
-            if not commands.current_user or not commands.current_user.get('uid'):
-                print("Please login first")
-                return
+            if not check_login(): return
             
             if len(parts) == 2:
                 try:
-                    expense_id = int(parts[1])
-                    if commands.delete_expense(expense_id):
-                        print(f"Expense {expense_id} deleted successfully")
+                    if commands.delete_expense(int(parts[1])):
+                        print("Expense deleted")
                     else:
-                        print("Failed to delete expense")
+                        print("Delete failed. Check if you own this expense.")
                 except ValueError:
-                    print("Invalid expense ID. Must be a number")
+                    print("Error: Expense ID must be a number")
             else:
-                print("Usage: delete_expense <expense_id>")
+                print("Usage: delete_expense <ID>")
 
         # Input format: add_tag <tag_name>
         elif command == "add_tag":

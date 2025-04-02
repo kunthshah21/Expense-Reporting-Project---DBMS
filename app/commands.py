@@ -28,8 +28,10 @@ def login(username, password):
     finally:
         conn.close()
 
+# Replace current logout() with:
 def logout():
     current_user.clear()
+    current_user.update({'uid': None, 'username': None, 'role': None})
 #endregion
 
 #region User Management
