@@ -609,7 +609,7 @@ def import_expenses(file_path):
         return False
 
 def export_csv(file_path, sort_field):
-    valid_fields = ['date', 'amount', 'category', 'payment_method']
+    valid_fields = ['date', 'amount', 'category', 'payment_method', 'tags']
     sort_field = sort_field.lower()
     
     if sort_field not in valid_fields:
@@ -637,7 +637,10 @@ def export_csv(file_path, sort_field):
             key=lambda x: (
                 x['date'] if sort_field == 'date' else
                 float(x['amount']) if sort_field == 'amount' else
-                x[sort_field]
+                x['category_name'] if sort_field == 'category' else
+                x['method'] if sort_field == 'payment_method' else
+                x['tags'] if sort_field == 'tags' else
+                ""
             )
         )
 
