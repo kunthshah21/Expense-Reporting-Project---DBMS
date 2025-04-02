@@ -716,8 +716,22 @@ def list_payment_methods():
     finally:
         conn.close()
 
+# Add this helper function at the top
+def validate_date(date_str):
+    try:
+        datetime.strptime(date_str, '%Y-%m-%d')
+        return True
+    except ValueError:
+        return False
+
 # region Reports
 def report_top_expenses(n, start_date, end_date):
+    if not validate_date(start_date) or not validate_date(end_date):
+        print("Invalid date format. Use YYYY-MM-DD")
+        return False
+    if start_date > end_date:
+        print("Error: Start date must be before end date")
+        return False
     try:
         conn = get_db_connection()
         query = """
@@ -859,6 +873,10 @@ def report_monthly_category_spending():
 
 def report_highest_spender_per_month():
     try:
+        if current_user.get('role') != 'Admin':
+            print("Permission denied: Admin access required")
+            return False
+            
         conn = get_db_connection()
         query = """
             WITH monthly_spending AS (
@@ -901,23 +919,29 @@ def report_highest_spender_per_month():
 def report_frequent_category():
     try:
         conn = get_db_connection()
+        # Get all categories with max count
         query = """
-            SELECT c.category_name, COUNT(*) AS count
-            FROM expenses e
-            JOIN categories c ON e.cid = c.cid
-            WHERE e.uid = ?
-            GROUP BY c.category_name
-            ORDER BY count DESC
-            LIMIT 1
+            WITH category_counts AS (
+                SELECT c.category_name, COUNT(*) AS count,
+                       MAX(COUNT(*)) OVER () AS max_count
+                FROM expenses e
+                JOIN categories c ON e.cid = c.cid
+                WHERE e.uid = ?
+                GROUP BY c.category_name
+            )
+            SELECT category_name, count
+            FROM category_counts
+            WHERE count = max_count
         """
-        result = conn.execute(query, (current_user['uid'],)).fetchone()
+        results = conn.execute(query, (current_user['uid'],)).fetchall()
         
-        if not result:
+        if not results:
             print("No expense data available")
             return
 
-        print(f"\nMost Frequent Category: {result['category_name']}")
-        print(f"Number of Expenses: {result['count']}")
+        print("\nMost Frequent Categories:")
+        for row in results:
+            print(f"{row['category_name']}: {row['count']} expenses")
         return True
     except Exception as e:
         print(f"Error generating report: {str(e)}")
