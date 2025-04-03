@@ -7,6 +7,8 @@ import pandas as pd
 from datetime import datetime
 import tempfile
 import os
+# Update the imports at the top of the file to include update_group:
+
 from app.commands import (
     # Authentication
     login, logout, current_user,
@@ -20,6 +22,7 @@ from app.commands import (
     add_tag, list_tags, delete_tag,
     # Groups
     create_group, add_user_to_group, delete_group, add_group_expense, list_groups,
+    update_group,  # Add this line
     # Group Reports
     report_group_expenses, report_group_tag_usage, report_group_category_spending, 
     report_group_user_expenses, check_group_permissions,
@@ -924,7 +927,34 @@ def display_groups_page():
                         st.success(f"Group '{delete_group_name}' deleted successfully!")
                     else:
                         st.error("Failed to delete group. Check if you have permission.")
-    
+
+                # Update Group
+        st.markdown("### Update Group")
+        with st.form("update_group_form"):
+            update_group_name = st.text_input("Current Group Name")
+            update_field = st.selectbox("Field to Update", ["group_name", "description"])
+            
+            if update_field == "group_name":
+                new_value = st.text_input("New Group Name")
+            else:
+                new_value = st.text_area("New Description")
+            
+            update_button = st.form_submit_button("Update Group")
+            
+            if update_button:
+                if not update_group_name:
+                    st.error("Group name is required.")
+                elif not new_value:
+                    st.error("New value is required.")
+                else:
+                    success = update_group(update_group_name, update_field, new_value)
+                    if success:
+                        st.success(f"Group '{update_group_name}' updated successfully!")
+                        if update_field == "group_name":
+                            st.info(f"The group is now named '{new_value}'")
+                    else:
+                        st.error("Failed to update group. Check if you have permission or if the group exists.")
+
     with tabs[1]:  # Group Expenses tab
         st.markdown("### Add Group Expense")
         
