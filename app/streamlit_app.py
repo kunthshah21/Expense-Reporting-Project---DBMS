@@ -19,9 +19,12 @@ from app.commands import (
     # Tags
     add_tag, list_tags, delete_tag,
     # Groups
-    create_group, add_user_to_group, delete_group, add_group_expense,
+    create_group, add_user_to_group, delete_group, add_group_expense, list_groups,
+    # Group Reports
+    report_group_expenses, report_group_tag_usage, report_group_category_spending, 
+    report_group_user_expenses, check_group_permissions,
     # Import/Export
-    import_expenses, export_csv, import_group_csv, export_group_csv,  # Add these imports
+    import_expenses, export_csv, import_group_csv, export_group_csv,
     # Reports
     report_top_expenses, report_category_spending, report_above_average_expenses, 
     report_monthly_category_spending, report_highest_spender_per_month,
@@ -196,16 +199,23 @@ def display_sidebar():
         if st.button("🚪 Logout"):
             logout_user()
 
-# Dashboard Page
 def display_dashboard():
     st.markdown('<p class="section-header">Dashboard</p>', unsafe_allow_html=True)
     
     # Get expense data for the current user
     try:
-        # Create custom capture for list_expenses output
+        # Capture expenses data
         import io
         import sys
         from contextlib import redirect_stdout
+        from datetime import datetime, timedelta
+        import pandas as pd
+        import numpy as np
+        
+        # Get current date and calculate date ranges
+        today = datetime.today()
+        this_month_start = datetime(today.year, today.month, 1)
+        last_month_start = (this_month_start - timedelta(days=1)).replace(day=1)
         
         # Capture console output when calling list_expenses
         f = io.StringIO()
@@ -217,62 +227,30 @@ def display_dashboard():
         # Display a welcome message and basic stats
         st.markdown(f"### Welcome back, {st.session_state.username}!")
         
-        # Create a row of metric cards
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            # Get most frequent category
-            with redirect_stdout(io.StringIO()):  # Suppress console output
-                report_frequent_category()
-                
-            st.metric(
-                label="Most Used Category", 
-                value="Food & Dining" if "Food" in output else "Other",
-                delta="↑ 5% from last month"
-            )
-        
-        with col2:
-            st.metric(
-                label="Total Expenses This Month", 
-                value="₹5,240",
-                delta="-12% from last month"
-            )
-        
-        with col3:
-            st.metric(
-                label="Pending Group Expenses", 
-                value="3",
-                delta="1 new"
-            )
-        
-        # Display recent expenses
-        st.markdown("### Recent Expenses")
-        
-        # Parse the captured output to extract the expenses table
+        # Parse expense data
         lines = output.strip().split('\n')
-        if len(lines) > 5:  # Header + separator + at least one expense
-            # Find the header line
-            header_idx = -1
-            for i, line in enumerate(lines):
-                if "ID" in line and "Amount" in line and "Category" in line:
-                    header_idx = i
-                    break
-            
-            if header_idx >= 0:
-                # Extract header and parse
-                header = lines[header_idx].split()
-                # Parse expenses data (simplified)
-                expenses_data = []
-                for line in lines[header_idx+2:]:  # Skip header and separator line
-                    if line.strip():
-                        parts = line.split()
-                        if len(parts) >= 6:
-                            expense_id = parts[0]
-                            amount = parts[1].replace('₹', '')
-                            category = parts[2]
-                            payment = parts[3]
-                            date = parts[4]
-                            description = ' '.join(parts[5:])
+        expenses_data = []
+        header_idx = -1
+        
+        for i, line in enumerate(lines):
+            if "ID" in line and "Amount" in line and "Category" in line:
+                header_idx = i
+                break
+                
+        if header_idx >= 0:
+            for line in lines[header_idx+2:]:  # Skip header and separator line
+                if line.strip():
+                    parts = line.split()
+                    if len(parts) >= 6:
+                        expense_id = parts[0]
+                        amount = float(parts[1].replace('₹', '').replace(',', ''))
+                        category = parts[2]
+                        payment = parts[3]
+                        date_str = parts[4]
+                        description = ' '.join(parts[5:])
+                        
+                        try:
+                            date = datetime.strptime(date_str, '%Y-%m-%d')
                             
                             expenses_data.append({
                                 "ID": expense_id,
@@ -282,20 +260,101 @@ def display_dashboard():
                                 "Date": date,
                                 "Description": description
                             })
-                
-                if expenses_data:
-                    expenses_df = pd.DataFrame(expenses_data)
-                    st.dataframe(expenses_df.head(5), use_container_width=True)
+                        except ValueError:
+                            # Skip entries with invalid date format
+                            pass
+        
+        if expenses_data:
+            # Convert to DataFrame for easier analysis
+            df = pd.DataFrame(expenses_data)
+            
+            # Create a row of metric cards with real data
+            col1, col2, col3 = st.columns(3)
+            
+            # Calculate metrics
+            with col1:
+                # Get most frequent category
+                if not df.empty and 'Category' in df.columns:
+                    top_category = df['Category'].value_counts().idxmax()
+                    category_count = df['Category'].value_counts().max()
+                    st.metric(
+                        label="Most Used Category", 
+                        value=top_category,
+                        help=f"Used {category_count} times"
+                    )
                 else:
-                    st.info("No recent expenses found.")
+                    st.metric(label="Most Used Category", value="No data")
+            
+            with col2:
+                # Calculate total expenses this month
+                if not df.empty and 'Date' in df.columns and 'Amount' in df.columns:
+                    df['Date'] = pd.to_datetime(df['Date'])
+                    this_month_expenses = df[df['Date'] >= this_month_start]['Amount'].sum()
+                    last_month_expenses = df[(df['Date'] >= last_month_start) & (df['Date'] < this_month_start)]['Amount'].sum()
+                    
+                    if last_month_expenses > 0:
+                        delta_percentage = ((this_month_expenses - last_month_expenses) / last_month_expenses) * 100
+                    else:
+                        delta_percentage = None
+                    
+                    st.metric(
+                        label="Total Expenses This Month", 
+                        value=f"₹{this_month_expenses:,.2f}",
+                        delta=f"{delta_percentage:.1f}% from last month" if delta_percentage is not None else None,
+                        delta_color="inverse"
+                    )
+                else:
+                    st.metric(label="Total Expenses This Month", value="₹0.00")
+            
+            with col3:
+                # Count payments by method
+                if not df.empty and 'Payment' in df.columns:
+                    payment_counts = df['Payment'].value_counts()
+                    top_payment = payment_counts.idxmax() if not payment_counts.empty else "None"
+                    payment_count = payment_counts.max() if not payment_counts.empty else 0
+                    st.metric(
+                        label="Top Payment Method", 
+                        value=top_payment,
+                        help=f"Used {payment_count} times"
+                    )
+                else:
+                    st.metric(label="Top Payment Method", value="No data")
+            
+            # Add expense summary charts
+            st.markdown("### Expense Summary")
+            
+            if not df.empty:
+                tab1, tab2 = st.tabs(["Category Breakdown", "Monthly Trend"])
+                
+                with tab1:
+                    # Category breakdown chart
+                    if 'Category' in df.columns and 'Amount' in df.columns:
+                        category_totals = df.groupby('Category')['Amount'].sum().sort_values(ascending=False)
+                        st.bar_chart(category_totals)
+                
+                with tab2:
+                    # Monthly trend chart
+                    if 'Date' in df.columns and 'Amount' in df.columns:
+                        df['Month'] = df['Date'].dt.strftime('%Y-%m')
+                        monthly_totals = df.groupby('Month')['Amount'].sum()
+                        st.line_chart(monthly_totals)
+            
+            # Recent expenses table
+            st.markdown("### Recent Expenses")
+            if expenses_data:
+                st.dataframe(
+                    df.sort_values('Date', ascending=False).head(5),
+                    use_container_width=True,
+                    hide_index=True
+                )
             else:
-                st.info("No expenses found. Add some expenses to see them here.")
+                st.info("No recent expenses found. Add some expenses to see them here.")
         else:
             st.info("No expenses found. Add some expenses to see them here.")
-        
+            
     except Exception as e:
         st.error(f"Error loading dashboard data: {str(e)}")
-
+        
 # Expenses Page
 def display_expenses_page():
     st.markdown('<p class="section-header">Expenses</p>', unsafe_allow_html=True)
@@ -748,49 +807,85 @@ def display_admin_page():
 def display_groups_page():
     st.markdown('<p class="section-header">Groups</p>', unsafe_allow_html=True)
     
-    tab1, tab2, tab3 = st.tabs(["Create Group", "Add User to Group", "Add Group Expense"])
+    tabs = st.tabs(["Create & Manage", "Group Expenses", "Group Reports"])
     
-    with tab1:
-        st.markdown("### Create New Group")
+    with tabs[0]:  # Create & Manage tab
+        col1, col2 = st.columns(2)
         
-        with st.form("create_group_form"):
-            group_name = st.text_input("Group Name")
-            description = st.text_area("Description")
-            
-            create_button = st.form_submit_button("Create Group")
-            
-            if create_button:
-                if not group_name:
-                    st.error("Group name is required.")
-                else:
-                    success = create_group(group_name, description)
-                    if success:
-                        st.success(f"Group '{group_name}' created successfully!")
+        with col1:
+            st.markdown("### Create New Group")
+            with st.form("create_group_form"):
+                group_name = st.text_input("Group Name")
+                description = st.text_area("Description")
+                
+                create_button = st.form_submit_button("Create Group")
+                
+                if create_button:
+                    if not group_name:
+                        st.error("Group name is required.")
                     else:
-                        st.error("Failed to create group. It may already exist.")
-    
-    with tab2:
-        st.markdown("### Add User to Group")
+                        success = create_group(group_name, description)
+                        if success:
+                            st.success(f"Group '{group_name}' created successfully!")
+                        else:
+                            st.error("Failed to create group. It may already exist.")
         
-        with st.form("add_user_to_group_form"):
-            # Get users and groups
-            users = list_users()
+        with col2:
+            st.markdown("### Add User to Group")
+            with st.form("add_user_to_group_form"):
+                username = st.text_input("Username to Add")
+                user_group_name = st.text_input("Group Name", key="add_user_group")
+                
+                add_button = st.form_submit_button("Add User to Group")
+                
+                if add_button:
+                    if not username or not user_group_name:
+                        st.error("Username and group name are required.")
+                    else:
+                        success = add_user_to_group(username, user_group_name)
+                        if success:
+                            st.success(f"User '{username}' added to group '{user_group_name}' successfully!")
+                        else:
+                            st.error("Failed to add user to group. Check if the user and group exist.")
+        
+        # List existing groups
+                # List existing groups
+        st.markdown("### Your Groups")
+        if st.button("Refresh Group List"):
+            import io
+            from contextlib import redirect_stdout
             
-            # For groups, we need to implement a function to list groups
+            f = io.StringIO()
+            with redirect_stdout(f):
+                list_groups()
             
-            add_button = st.form_submit_button("Add User to Group")
+            output = f.getvalue()
+            if output:
+                st.text_area("Your Groups", output, height=200)
+            else:
+                st.info("You don't have any groups yet.")
+        
+        # Delete Group
+        st.markdown("### Delete Group")
+        with st.form("delete_group_form"):
+            delete_group_name = st.text_input("Group Name to Delete")
+            confirm_delete = st.checkbox("I understand this action cannot be undone")
             
-            if add_button:
-                username = st.text_input("Username")
-                if not username or not group_name:
-                    st.error("Username and group name are required.")
-                    success = add_user_to_group(username, group_name)
-                    success = add_user_to_group(username, group_name)
-                    st.success(f"User '{username}' added to group '{group_name}' successfully!")
+            delete_button = st.form_submit_button("Delete Group")
+            
+            if delete_button:
+                if not delete_group_name:
+                    st.error("Group name is required.")
+                elif not confirm_delete:
+                    st.error("Please confirm deletion by checking the box.")
                 else:
-                    st.error("Failed to add user to group.")
+                    success = delete_group(delete_group_name)
+                    if success:
+                        st.success(f"Group '{delete_group_name}' deleted successfully!")
+                    else:
+                        st.error("Failed to delete group. Check if you have permission.")
     
-    with tab3:
+    with tabs[1]:  # Group Expenses tab
         st.markdown("### Add Group Expense")
         
         with st.form("add_group_expense_form"):
@@ -798,42 +893,137 @@ def display_groups_page():
             
             with col1:
                 amount = st.number_input("Amount (₹)", min_value=0.01, step=100.0)
-                group_name = st.text_input("Group Name")
+                group_expense_name = st.text_input("Group Name", key="expense_group")
                 category = st.selectbox("Category", [cat["category_name"] for cat in list_categories()])
                 payment_method = st.selectbox("Payment Method", [method["method"] for method in list_payment_methods()])
-            
-                group_name = st.text_input("Group Name")
-                category = st.selectbox("Category", [cat["category_name"] for cat in list_categories()])
-                payment_method = st.selectbox("Payment Method", [method["method"] for method in list_payment_methods()])
+                expense_date = st.date_input("Date", value=datetime.today())
             
             with col2:
                 description = st.text_input("Description")
+                available_tags = [tag["tag_name"] for tag in list_tags()]
+                selected_tags = st.multiselect("Tags", available_tags)
                 
                 # Users to split with
-                users = list_users()
-                split_users = st.multiselect("Split With Users", 
-                                           [user["username"] for user in users if user["username"] != st.session_state.username])
+                all_users = list_users() if st.session_state.role == 'Admin' else []
+                if all_users:
+                    split_users = st.multiselect("Split With Users", 
+                                               [user["username"] for user in all_users if user["username"] != st.session_state.username])
+                else:
+                    split_users = st.text_input("Split With Users (comma-separated usernames)")
+                    if split_users:
+                        split_users = [username.strip() for username in split_users.split(',') if username.strip()]
             
             add_button = st.form_submit_button("Add Group Expense")
             
             if add_button:
                 if amount <= 0:
                     st.error("Amount must be greater than 0")
-                elif not group_name:
+                elif not group_expense_name:
                     st.error("Group name is required")
+                elif not isinstance(split_users, list) or not split_users:
                     st.error("At least one other user is required for splitting")
                 else:
-                    if not split_users:
-                        st.error("At least one other user is required for splitting")
-                    else:
-                        success = add_group_expense(
-                            float(amount), group_name, category.lower(), payment_method.lower(),
-                            description, split_users
-                        )
+                    success = add_group_expense(
+                        float(amount), group_expense_name, category, payment_method,
+                        expense_date.isoformat(), description, selected_tags, split_users
+                    )
                     if success:
                         st.success("Group expense added successfully!")
                     else:
-                        st.error("Failed to add group expense.")
+                        st.error("Failed to add group expense. Check if you have permission.")
+        
+        # List Group Expenses
+        st.markdown("### View Group Expenses")
+        view_group_name = st.text_input("Group Name to View Expenses")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            category_filter = st.selectbox("Filter by Category", ["All"] + [cat["category_name"] for cat in list_categories()])
+        with col2:
+            tag_filter = st.selectbox("Filter by Tag", ["All"] + [tag["tag_name"] for tag in list_tags()])
+        
+        if st.button("View Group Expenses") and view_group_name:
+            filters = {}
+            if category_filter != "All":
+                filters["category"] = category_filter
+            if tag_filter != "All":
+                filters["tag"] = tag_filter
+            # Add this code to capture and display the output
+            import io
+            from contextlib import redirect_stdout
+            
+            f = io.StringIO()
+            with redirect_stdout(f):
+                success = report_group_expenses(view_group_name, filters)
+            
+            output = f.getvalue()
+            
+            if output:
+                st.text_area("Group Expenses", output, height=400)
+            elif not success:
+                st.error(f"Failed to view expenses for group '{view_group_name}'. Check if you have permission.")
+
+            success = report_group_expenses(view_group_name, filters)
+            if not success:
+                st.error(f"Failed to view expenses for group '{view_group_name}'. Check if you have permission.")
+    
+        with tabs[2]:  # Group Reports tab
+            st.markdown("### Group Reports")
+            
+            report_group_name = st.text_input("Group Name for Reports")
+            
+            if report_group_name:
+                report_type = st.selectbox("Select Report Type", [
+                    "Category Spending", 
+                    "Tag Usage", 
+                    "User Expenses",
+                ])
+                
+                if report_type == "Category Spending":
+                    category_name = st.selectbox("Select Category", [cat["category_name"] for cat in list_categories()])
+                    if st.button("Generate Report"):
+                        import io
+                        from contextlib import redirect_stdout
+                        
+                        f = io.StringIO()
+                        with redirect_stdout(f):
+                            success = report_group_category_spending(report_group_name, category_name)
+                        
+                        output = f.getvalue()
+                        if output:
+                            st.text_area("Category Spending Report", output, height=300)
+                        elif not success:
+                            st.error(f"Failed to generate category spending report for group '{report_group_name}'.")
+                
+                elif report_type == "Tag Usage":
+                    if st.button("Generate Report"):
+                        import io
+                        from contextlib import redirect_stdout
+                        
+                        f = io.StringIO()
+                        with redirect_stdout(f):
+                            success = report_group_tag_usage(report_group_name)
+                        
+                        output = f.getvalue()
+                        if output:
+                            st.text_area("Tag Usage Report", output, height=300)
+                        elif not success:
+                            st.error(f"Failed to generate tag usage report for group '{report_group_name}'.")
+                
+                elif report_type == "User Expenses":
+                    if st.button("Generate Report"):
+                        import io
+                        from contextlib import redirect_stdout
+                        
+                        f = io.StringIO()
+                        with redirect_stdout(f):
+                            success = report_group_user_expenses(report_group_name)
+                        
+                        output = f.getvalue()
+                        if output:
+                            st.text_area("User Expenses Report", output, height=300)
+                        elif not success:
+                            st.error(f"Failed to generate user expenses report for group '{report_group_name}'.")
 
 def display_import_export_page():
     st.markdown('<p class="section-header">Import/Export Data</p>', unsafe_allow_html=True)
@@ -845,7 +1035,7 @@ def display_import_export_page():
         
         # Individual Expenses Import
         st.markdown("#### Individual Expenses")
-        st.info("Upload a CSV file containing individual expenses. The file should have columns: amount, category, payment_method, date, description (optional), and tags (optional).")
+        st.info("Upload a CSV file containing expenses with columns: amount, category, payment_method, date, description, tags (optional)")
         
         individual_file = st.file_uploader("Choose CSV file for individual expenses", 
                                          type="csv", key="individual_import")
@@ -898,7 +1088,7 @@ def display_import_export_page():
         st.markdown("#### Individual Expenses")
         col1, col2 = st.columns(2)
         with col1:
-            export_individual_path = st.text_input("File Name", "my_expenses.csv")
+            export_filename = st.text_input("File Name", "my_expenses.csv")
         
         with col2:
             sort_field_individual = st.selectbox("Sort By", 
@@ -907,22 +1097,27 @@ def display_import_export_page():
         
         if st.button("Export Individual Expenses"):
             try:
-                with st.spinner("Exporting expenses..."):
-                    # Create a temporary file
+                with st.spinner("Preparing export..."):
+                    # Create a temporary file for export
                     with tempfile.NamedTemporaryFile(delete=False, suffix='.csv') as tmp_file:
                         temp_path = tmp_file.name
                         
                     if export_csv(temp_path, sort_field_individual):
                         with open(temp_path, "rb") as f:
+                            data = f.read()
                             st.download_button(
                                 label="📥 Download Individual Expenses",
-                                data=f,
-                                file_name=export_individual_path,
+                                data=data,
+                                file_name=export_filename,
                                 mime="text/csv",
-                                key="download_individual",
-                                help="Click to download your expenses data"
+                                key="download_individual"
                             )
                         st.success("Individual expenses exported successfully!")
+                        # Clean up the temp file after a short delay
+                        try:
+                            os.unlink(temp_path)
+                        except:
+                            pass
                     else:
                         st.error("Failed to export individual expenses.")
             except Exception as e:
@@ -937,7 +1132,7 @@ def display_import_export_page():
             group_name_export = st.text_input("Group Name for Export")
         
         with col2:
-            export_group_path = st.text_input("File Name for Group", "group_expenses.csv")
+            export_group_filename = st.text_input("File Name for Group", "group_expenses.csv")
         
         sort_field_group = st.selectbox("Sort By", 
                                       ["date", "amount", "category", "payment_method", "tags"],
@@ -945,26 +1140,39 @@ def display_import_export_page():
         
         if st.button("Export Group Expenses") and group_name_export:
             try:
-                with st.spinner("Exporting group expenses..."):
-                    # Create a temporary file
+                with st.spinner("Preparing group export..."):
+                    # Create a temporary file for export
                     with tempfile.NamedTemporaryFile(delete=False, suffix='.csv') as tmp_file:
                         temp_path = tmp_file.name
                     
                     if export_group_csv(group_name_export, temp_path, sort_field_group):
                         with open(temp_path, "rb") as f:
+                            data = f.read()
                             st.download_button(
                                 label="📥 Download Group Expenses",
-                                data=f,
-                                file_name=export_group_path,
+                                data=data,
+                                file_name=export_group_filename,
                                 mime="text/csv",
-                                key="download_group",
-                                help="Click to download group expenses data"
+                                key="download_group"
                             )
                         st.success(f"Group '{group_name_export}' expenses exported successfully!")
+                        # Clean up the temp file
+                        try:
+                            os.unlink(temp_path)
+                        except:
+                            pass
                     else:
                         st.error("Failed to export group expenses. Check group permissions.")
             except Exception as e:
                 st.error(f"Export error: {str(e)}")
+
+# Add this helper function if not already present
+
+def get_current_user_id():
+    """Helper function to get the current user's ID safely"""
+    if current_user and current_user.get('uid'):
+        return current_user['uid']
+    return None
 
 if __name__ == "__main__":
     main()
