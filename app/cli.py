@@ -280,47 +280,79 @@ def process_command(cmd):
             else:
                 print("Usage: add_group <group_name> <description>")
 
+        elif command == "delete_group":
+            if not check_login():
+                return
+            print(parts)
+                
+            if len(parts) == 2:
+                group_name = parts[1]
+
+                if commands.delete_group(group_name):
+                    print(f"Group '{group_name}' deleted, and all the data with it.")
+                else:
+                    print("Failed to add group.")
+            else:
+                print("Usage: delete_group <group_name>")
+
         # add group expense
         elif command == "add_group_expense":
             if not check_login():
                 return
                 
-            if len(parts) >= 7:
-                # Extract required parameters
-                amount = parts[1]
-                group_name = parts[2]
-                category = parts[3]
-                payment_method = parts[4]
-                date = parts[5]
-                description = parts[6]
+            if len(parts) < 7:
+                print("Usage: add_group_expense <amount> <group_name> <category> <payment_method> <YYYY-MM-DD> <description> <comma-separated-tags> | <comma-separated-usernames>")
+                return
+            
+            # Extract required parameters
+            amount = parts[1]
+            group_name = parts[2]
+            category = parts[3]
+            payment_method = parts[4]
+            date = parts[5]
+            description = parts[6]
 
-                # Validate date format
-                try:
-                    # Try to parse the date to ensure it's in YYYY-MM-DD format
-                    datetime.strptime(date, '%Y-%m-%d')
-                except ValueError:
-                    print("Invalid date format. Please use YYYY-MM-DD.")
-                    return  # Return early if the date format is incorrect
+            # Validate amount (ensure it's a positive number)
+            try:
+                amount = float(amount)
+                if amount <= 0:
+                    raise ValueError
+            except ValueError:
+                print("Error: Amount must be a positive number.")
+                return
 
-                # Handle tags and split users
-                tags = []
-                split_usernames = []
+            # Validate date format
+            try:
+                datetime.strptime(date, '%Y-%m-%d')  # Ensures valid format
+            except ValueError:
+                print("Invalid date format. Please use YYYY-MM-DD.")
+                return
 
-                if "|" in parts[7]:  # Check if both lists are provided
-                    tag_part, user_part = parts[7].split("|", 1)
+            # Handle optional tags and users
+            tags = []
+            split_usernames = []
+
+            if len(parts) > 7:  # Check if tags/users are provided
+                extra_input = " ".join(parts[7:]) 
+
+                if "|" in extra_input:  # Both tags and users are provided
+                    tag_part, user_part = extra_input.split("|", 1)
                     tags = [tag.strip() for tag in tag_part.split(",") if tag.strip()]
                     split_usernames = [user.strip() for user in user_part.split(",") if user.strip()]
                 else:
-                    tags = [tag.strip() for tag in parts[7].split(",") if tag.strip()]  # Only tags provided
+                    # If no "|" but has commas, assume it's just tags
+                    tags = [tag.strip() for tag in extra_input.split(",") if tag.strip()]
 
-                # Call the function with parsed arguments
-                if commands.add_group_expense(amount, group_name, category, payment_method, date, description, tags, split_usernames):
-                    print("Group expense added successfully.")
-                else:
-                    print("Failed to add group expense.")
+            # Ensure at least one user is provided
+            if not split_usernames:
+                print("Error: You must provide at least one user to split the expense.")
+                return
+
+            # Call function with parsed arguments
+            if commands.add_group_expense(amount, group_name, category, payment_method, date, description, tags, split_usernames):
+                print("Group expense added successfully.")
             else:
-                print("Usage: add_group_expense <amount> <group_name> <category> <payment_method> <YYYY-MM-DD>  <description> <comma-separated-tags> | <comma-separated-usernames>")
-
+                print("Failed to add group expense.")
 
         # Command: Add User to Group
         # Usage: add_user_to_group <username> <group_name>

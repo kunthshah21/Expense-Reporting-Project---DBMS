@@ -50,8 +50,7 @@ def initialize_db():
         description TEXT,
         FOREIGN KEY(uid) REFERENCES users(uid),
         FOREIGN KEY(cid) REFERENCES categories(cid) ON DELETE RESTRICT,
-        FOREIGN KEY(pid) REFERENCES payment_methods(pid) ON DELETE RESTRICT,
-        CHECK (eid < 1000000)
+        FOREIGN KEY(pid) REFERENCES payment_methods(pid) ON DELETE RESTRICT
     )""")
 
     # TAG table
@@ -107,7 +106,6 @@ def initialize_db():
         FOREIGN KEY(gid) REFERENCES groups(gid) ON DELETE RESTRICT,
         FOREIGN KEY(cid) REFERENCES categories(cid) ON DELETE RESTRICT,
         FOREIGN KEY(pid) REFERENCES payment_methods(pid) ON DELETE RESTRICT
-        CHECK (geid >= 1000000)
     )""")
 
         # Expenses table

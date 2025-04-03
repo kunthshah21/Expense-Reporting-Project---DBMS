@@ -418,19 +418,45 @@ def add_user_to_group(username, group_name):
 def delete_group(group_name):
     try:
         conn = get_db_connection()
-        conn.execute("DELETE FROM groups WHERE group_name = ?", (group_name,))
+        cursor = conn.cursor()
+
+        # Check if the group exists
+        gid = cursor.execute("SELECT gid FROM groups WHERE group_name = ?", (group_name,)).fetchone()
+        if not gid:
+            print(f"Error: Group '{group_name}' does not exist.")
+            return False
+        gid = gid[0]
+
+        # Fetch all expense IDs associated with the group
+        expense_ids = cursor.execute("SELECT geid FROM group_expenses WHERE gid = ?", (gid,)).fetchall()
+        expense_ids = [row[0] for row in expense_ids]
+
+        if expense_ids:
+            # Convert list to a tuple for SQL queries
+            expense_ids_tuple = tuple(expense_ids)
+
+            # Delete related records in dependent tables
+            cursor.execute("DELETE FROM split_users WHERE geid IN ({})".format(",".join("?" * len(expense_ids))), expense_ids_tuple)
+            cursor.execute("DELETE FROM group_expense_tags WHERE geid IN ({})".format(",".join("?" * len(expense_ids))), expense_ids_tuple)
+            cursor.execute("DELETE FROM group_expenses WHERE gid = ?", (gid,))
+
+        # Finally, delete the group
+        cursor.execute("DELETE FROM groups WHERE gid = ?", (gid,))
+        
         conn.commit()
-        print(f"Group '{group_name}' deleted.")
+        print(f"Group '{group_name}' and all related expenses deleted successfully.")
         return True
+
     except Exception as e:
         print(f"Error deleting group: {str(e)}")
         return False
+
     finally:
         conn.close()
-#endregion
 
-
-def add_group_expense(amount, group_name, category, payment_method, description, tags, split_usernames):
+def add_group_expense(amount, group_name, category, payment_method, date, description, tags, split_usernames):
+    print(tags)
+    print(split_usernames)
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -446,10 +472,34 @@ def add_group_expense(amount, group_name, category, payment_method, description,
 
         gid, cid, pid = gid[0], cid[0], pid[0]
 
-        # Add expense to group_expenses table
+        # Check if the current user is in the group
+        is_user_in_group = cursor.execute(
+            "SELECT 1 FROM user_group WHERE uid = ? AND gid = ?", (current_user['uid'], gid)
+        ).fetchone()
+
+        # Only add current user if they are in the group
+        if is_user_in_group:
+            split_usernames.append(current_user['username'])
+
+        unique_usernames = list(set(split_usernames))  # Remove duplicates if any
+
+        # Fetch UIDs for all users
+        user_ids = []
+        for username in unique_usernames:
+            uid_result = cursor.execute("SELECT uid FROM users WHERE username = ?", (username,)).fetchone()
+            if uid_result:
+                user_ids.append(uid_result[0])
+            else:
+                print(f"Warning: User '{username}' not found, skipping.")
+
+        if len(user_ids) < 2:
+            print("Error: The expense must be split between at least two users.")
+            return False
+
+        # Add expense to group_expenses table with user-provided date
         cursor.execute(
-            "INSERT INTO group_expenses (gid, d_uid, amount, cid, pid, date, description) VALUES (?, ?, ?, ?, ?, date('now'), ?)",
-            (gid, current_user['uid'], amount, cid, pid, description)
+            "INSERT INTO group_expenses (gid, uid, amount, cid, pid, date, description) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (gid, current_user['uid'], amount, cid, pid, date, description)
         )
         geid = cursor.lastrowid  # Get the newly inserted expense ID
 
@@ -462,23 +512,6 @@ def add_group_expense(amount, group_name, category, payment_method, description,
             else:
                 tid = tag_result[0]
             cursor.execute("INSERT INTO group_expense_tags (geid, tid) VALUES (?, ?)", (geid, tid))
-
-        # Add users to the split_users table (including the expense creator)
-        split_usernames.append(current_user['username'])  # Ensure the expense creator is included
-        unique_usernames = list(set(split_usernames))  # Remove duplicates if any
-
-        # Fetch UIDs for all users
-        user_ids = []
-        for username in unique_usernames:
-            uid_result = cursor.execute("SELECT uid FROM users WHERE username = ?", (username,)).fetchone()
-            if uid_result:
-                user_ids.append(uid_result[0])
-            else:
-                print(f"Warning: User '{username}' not found, skipping.")
-
-        if not user_ids:
-            print("Error: No valid users found to split the expense.")
-            return False
 
         # Calculate split amount
         split_amount = amount / len(user_ids)
@@ -500,7 +533,6 @@ def add_group_expense(amount, group_name, category, payment_method, description,
 
     finally:
         conn.close()
-
 
 #region User Management Updates
 def update_user(username, field, new_value):
@@ -1066,18 +1098,20 @@ def report_group_expenses(group_name, filters=None):
         # Check if user has permission to view the group
         if not check_group_permissions(group_name):
             return False
-        
+
         base_query = """
             SELECT ge.geid, ge.amount, c.category_name, p.method, ge.date, ge.description,
-                   GROUP_CONCAT(t.tag_name, ', ') AS tags,
-                   GROUP_CONCAT(u.username, ', ') AS usernames
+                   (SELECT GROUP_CONCAT(DISTINCT t.tag_name) 
+                    FROM group_expense_tags getag 
+                    JOIN tags t ON getag.tid = t.tid 
+                    WHERE getag.geid = ge.geid) AS tags,
+                   (SELECT GROUP_CONCAT(DISTINCT u.username) 
+                    FROM split_users su 
+                    JOIN users u ON su.uid = u.uid 
+                    WHERE su.geid = ge.geid) AS usernames
             FROM group_expenses ge
             JOIN categories c ON ge.cid = c.cid
             JOIN payment_methods p ON ge.pid = p.pid
-            LEFT JOIN group_expense_tags getag ON ge.geid = getag.geid
-            LEFT JOIN tags t ON getag.tid = t.tid
-            LEFT JOIN split_users su ON ge.geid = su.geid
-            LEFT JOIN users u ON su.uid = u.uid
             WHERE ge.gid = (SELECT gid FROM groups WHERE group_name = ?)
         """
         params = [group_name]
@@ -1098,22 +1132,23 @@ def report_group_expenses(group_name, filters=None):
                     base_query += " AND ge.amount <= ?"
                     params.append(float(value))
                 elif key == 'tag':
-                    base_query += " AND t.tag_name = ?"
+                    base_query += " AND EXISTS (SELECT 1 FROM group_expense_tags getag JOIN tags t ON getag.tid = t.tid WHERE getag.geid = ge.geid AND t.tag_name = ?)"
+                                                             
                     params.append(value.lower())
 
-        base_query += " GROUP BY ge.geid ORDER BY ge.amount DESC"
-        
+        base_query += " ORDER BY ge.amount DESC"
+
         expenses = conn.execute(base_query, params).fetchall()
 
         if not expenses:
             print(f"No expenses found for group {group_name}")
             return False
-        
+
         print(f"\nGroup {group_name} Expenses:")
         print("{:<5} {:<10} {:<15} {:<12} {:<15} {:<30} {:<20} {:<30}".format(
             "ID", "Amount", "Category", "Payment", "Date", "Description", "Tags", "Users"))
         print("-" * 120)
-        
+
         for exp in expenses:
             print("{:<5} ₹{:<9.2f} {:<15} {:<12} {:<15} {:<30} {:<20} {:<30}".format(
                 exp['geid'],
@@ -1126,7 +1161,7 @@ def report_group_expenses(group_name, filters=None):
                 exp['usernames'] or "-"
             ))
         return True
-    
+
     except Exception as e:
         print(f"Error generating group expenses report: {str(e)}")
         return False
@@ -1265,8 +1300,7 @@ def check_group_permissions(group_name):
         print(f"Error checking permissions for group '{group_name}': {str(e)}")
         return False
 
-
-def export_group_csv(group_name, file_path, sort_field):
+def export_group_csv(group_name, file_path, sort_field=None):
     try:
         conn = get_db_connection()
 
@@ -1288,54 +1322,65 @@ def export_group_csv(group_name, file_path, sort_field):
         
         # Fetch group expenses
         query_expenses = """
-            SELECT ge.geid, ge.amount, c.category_name, p.method, ge.date, ge.description
+            SELECT ge.geid, ge.uid, ge.amount, c.category_name, p.method, ge.date, ge.description,
+                   u.username as creator_username
             FROM group_expenses ge
             JOIN categories c ON ge.cid = c.cid
             JOIN payment_methods p ON ge.pid = p.pid
+            JOIN users u ON ge.uid = u.uid
             WHERE ge.gid = ?
         """
+        if sort_field:
+            query_expenses += f" ORDER BY {sort_field}"
+            
         expenses = conn.execute(query_expenses, (group['gid'],)).fetchall()
-
-        # Fetch tags for each expense
-        query_tags = """
-            SELECT geid, GROUP_CONCAT(t.tag_name, ', ') AS tags
-            FROM group_expense_tags getag
-            JOIN tags t ON getag.tid = t.tid
-            GROUP BY geid
-        """
-        expense_tags = conn.execute(query_tags).fetchall()
-
-        # Fetch users and their split amounts in the group
-        query_users = """
-            SELECT u.username, su.split_amount
-            FROM split_users su
-            JOIN users u ON su.uid = u.uid
-            WHERE su.geid IN (SELECT geid FROM group_expenses WHERE gid = ?)
-        """
-        users_split = conn.execute(query_users, (group['gid'],)).fetchall()
 
         # Prepare data for export
         with open(file_path, 'w', newline='') as csvfile:
-            fieldnames = ['group_name', 'date_created', 'description', 'expense_id', 'amount', 'category_name', 'payment_method', 'expense_date', 'expense_description', 'tags', 'usernames', 'split_amount']
+            fieldnames = ['group_name', 'date_created', 'description', 
+                         'expense_id', 'creator_username', 'amount', 'category_name', 
+                         'payment_method', 'expense_date', 'expense_description', 
+                         'tags', 'split_usernames', 'split_amounts']
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writeheader()
 
             for expense in expenses:
-                expense_tags_dict = next((tag for tag in expense_tags if tag['geid'] == expense['geid']), {'tags': ''})
-                usernames = ', '.join([user['username'] for user in users_split if user['split_amount'] == expense['amount']])
+                # Get tags for this expense
+                tags_query = """
+                    SELECT t.tag_name
+                    FROM group_expense_tags get
+                    JOIN tags t ON get.tid = t.tid
+                    WHERE get.geid = ?
+                """
+                tags_result = conn.execute(tags_query, (expense['geid'],)).fetchall()
+                tags_str = ', '.join([tag['tag_name'] for tag in tags_result])
+                
+                # Get split users for this expense
+                split_query = """
+                    SELECT u.username, su.split_amount
+                    FROM split_users su
+                    JOIN users u ON su.uid = u.uid
+                    WHERE su.geid = ?
+                """
+                splits = conn.execute(split_query, (expense['geid'],)).fetchall()
+                
+                split_usernames = ', '.join([split['username'] for split in splits])
+                split_amounts = ', '.join([str(split['split_amount']) for split in splits])
+                
                 writer.writerow({
                     'group_name': group['group_name'],
                     'date_created': group['date_created'],
                     'description': group['description'],
                     'expense_id': expense['geid'],
+                    'creator_username': expense['creator_username'],
                     'amount': expense['amount'],
                     'category_name': expense['category_name'],
                     'payment_method': expense['method'],
                     'expense_date': expense['date'],
                     'expense_description': expense['description'],
-                    'tags': expense_tags_dict['tags'],
-                    'usernames': usernames,
-                    'split_amount': ', '.join([str(user['split_amount']) for user in users_split if user['split_amount'] == expense['amount']])
+                    'tags': tags_str,
+                    'split_usernames': split_usernames,
+                    'split_amounts': split_amounts
                 })
 
         print(f"Group data successfully exported to {file_path}")
@@ -1344,10 +1389,15 @@ def export_group_csv(group_name, file_path, sort_field):
     except Exception as e:
         print(f"Error exporting group data: {str(e)}")
         return False
+    finally:
+        if conn:
+            conn.close()
 
-def import_group_csv(group_name, file_path, sort_field):
+def import_group_csv(group_name, file_path):
+    conn = None
     try:
         conn = get_db_connection()
+        conn.execute("BEGIN TRANSACTION")
 
         # Check if the current user has permission to import data for this group
         if not check_group_permissions(group_name):
@@ -1356,52 +1406,137 @@ def import_group_csv(group_name, file_path, sort_field):
         # Open and read the CSV file
         with open(file_path, 'r') as csvfile:
             reader = csv.DictReader(csvfile)
-
-            # Process each row in the CSV
-            for row in reader:
-                # Insert group details (if they don't exist already)
-                query_group = """
+            rows = list(reader)
+            
+            if not rows:
+                print("CSV file is empty")
+                return False
+                
+            first_row = rows[0]
+            
+            # Check if the group exists or create it
+            group_query = "SELECT gid FROM groups WHERE group_name = ?"
+            group_result = conn.execute(group_query, (group_name,)).fetchone()
+            
+            if not group_result:
+                # Create the group if it doesn't exist
+                group_insert = """
                     INSERT INTO groups (group_name, date_created, description)
                     VALUES (?, ?, ?)
                 """
-                conn.execute(query_group, (row['group_name'], row['date_created'], row['description']))
-
-                # Insert expense details
-                query_expenses = """
-                    INSERT INTO group_expenses (gid, amount, cid, pid, date, description)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                group_created_date = first_row.get('date_created', datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+                group_description = first_row.get('description', '')
+                
+                result = conn.execute(group_insert, (group_name, group_created_date, group_description))
+                group_id = result.lastrowid
+                
+                # Add current user to the group
+                current_user_id = get_current_user_id()  # You need to implement this
+                if current_user_id:
+                    try:
+                        conn.execute("""
+                            INSERT INTO user_group (uid, gid) VALUES (?, ?)
+                        """, (current_user_id, group_id))
+                    except sqlite3.IntegrityError:
+                        pass  # User is already in the group
+            else:
+                group_id = group_result['gid']
+            
+            # Process each expense row
+            for row in rows:
+                # Get user ID from username
+                creator_query = "SELECT uid FROM users WHERE username = ?"
+                creator_result = conn.execute(creator_query, (row['creator_username'],)).fetchone()
+                if not creator_result:
+                    print(f"User {row['creator_username']} not found")
+                    raise Exception(f"User {row['creator_username']} not found")
+                creator_id = creator_result['uid']
+                
+                # Get category ID
+                category_query = "SELECT cid FROM categories WHERE category_name = ?"
+                category_result = conn.execute(category_query, (row['category_name'],)).fetchone()
+                if not category_result:
+                    print(f"Category {row['category_name']} not found")
+                    # Create category if it doesn't exist
+                    conn.execute("INSERT INTO categories (category_name) VALUES (?)", (row['category_name'].lower(),))
+                    category_result = conn.execute(category_query, (row['category_name'],)).fetchone()
+                category_id = category_result['cid']
+                
+                # Get payment method ID
+                payment_query = "SELECT pid FROM payment_methods WHERE method = ?"
+                payment_result = conn.execute(payment_query, (row['payment_method'],)).fetchone()
+                if not payment_result:
+                    print(f"Payment method {row['payment_method']} not found")
+                    # We shouldn't create payment methods as they are enum-like
+                    raise Exception(f"Payment method {row['payment_method']} not found")
+                payment_id = payment_result['pid']
+                
+                # Insert expense
+                expense_insert = """
+                    INSERT INTO group_expenses (gid, uid, amount, cid, pid, date, description)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                 """
-                # Extract the category_id and payment_method_id based on the names in the CSV
-                category_id = conn.execute("SELECT cid FROM categories WHERE category_name = ?", (row['category_name'],)).fetchone()['cid']
-                payment_method_id = conn.execute("SELECT pid FROM payment_methods WHERE method = ?", (row['payment_method'],)).fetchone()['pid']
-                expense_result = conn.execute(query_expenses, (row['group_name'], row['amount'], category_id, payment_method_id, row['expense_date'], row['expense_description']))
-
-                geid = expense_result.lastrowid  # Get the last inserted expense ID
-
-                # Insert tags for the expense
-                tags = row['tags'].split(', ')
-                for tag in tags:
-                    tag_id = conn.execute("SELECT tid FROM tags WHERE tag_name = ?", (tag,)).fetchone()['tid']
-                    query_tags = """
-                        INSERT INTO group_expense_tags (geid, tid)
-                        VALUES (?, ?)
-                    """
-                    conn.execute(query_tags, (geid, tag_id))
-
-                # Insert split users for the expense
-                usernames = row['usernames'].split(', ')
-                split_amounts = row['split_amount'].split(', ')
-                for username, split_amount in zip(usernames, split_amounts):
-                    user_id = conn.execute("SELECT uid FROM users WHERE username = ?", (username,)).fetchone()['uid']
-                    query_split_users = """
-                        INSERT INTO split_users (geid, uid, split_amount)
-                        VALUES (?, ?, ?)
-                    """
-                    conn.execute(query_split_users, (geid, user_id, float(split_amount)))
-
+                expense_result = conn.execute(expense_insert, (
+                    group_id, 
+                    creator_id, 
+                    float(row['amount']), 
+                    category_id, 
+                    payment_id, 
+                    row['expense_date'], 
+                    row['expense_description']
+                ))
+                expense_id = expense_result.lastrowid
+                
+                # Process tags if present
+                if row['tags']:
+                    tags = [tag.strip() for tag in row['tags'].split(',') if tag.strip()]
+                    for tag in tags:
+                        tag_query = "SELECT tid FROM tags WHERE tag_name = ?"
+                        tag_result = conn.execute(tag_query, (tag,)).fetchone()
+                        
+                        if not tag_result:
+                            # Create tag if it doesn't exist
+                            conn.execute("INSERT INTO tags (tag_name) VALUES (?)", (tag.lower(),))
+                            tag_result = conn.execute(tag_query, (tag,)).fetchone()
+                            
+                        tag_id = tag_result['tid']
+                        tag_insert = """
+                            INSERT INTO group_expense_tags (geid, tid)
+                            VALUES (?, ?)
+                        """
+                        conn.execute(tag_insert, (expense_id, tag_id))
+                
+                # Process split users if present
+                if row['split_usernames'] and row['split_amounts']:
+                    usernames = [user.strip() for user in row['split_usernames'].split(',') if user.strip()]
+                    amounts = [amount.strip() for amount in row['split_amounts'].split(',') if amount.strip()]
+                    
+                    if len(usernames) != len(amounts):
+                        print("Warning: Number of split users doesn't match number of split amounts")
+                    
+                    for i in range(min(len(usernames), len(amounts))):
+                        user_query = "SELECT uid FROM users WHERE username = ?"
+                        user_result = conn.execute(user_query, (usernames[i],)).fetchone()
+                        
+                        if user_result:
+                            split_user_id = user_result['uid']
+                            split_insert = """
+                                INSERT INTO split_users (geid, uid, split_amount)
+                                VALUES (?, ?, ?)
+                            """
+                            conn.execute(split_insert, (expense_id, split_user_id, float(amounts[i])))
+                        else:
+                            print(f"Split user {usernames[i]} not found")
+        
+        conn.execute("COMMIT")
         print(f"Group data successfully imported from {file_path}")
         return True
 
     except Exception as e:
+        if conn:
+            conn.execute("ROLLBACK")
         print(f"Error importing group data: {str(e)}")
         return False
+    finally:
+        if conn:
+            conn.close()
