@@ -963,9 +963,6 @@ def display_groups_page():
             elif not success:
                 st.error(f"Failed to view expenses for group '{view_group_name}'. Check if you have permission.")
 
-            success = report_group_expenses(view_group_name, filters)
-            if not success:
-                st.error(f"Failed to view expenses for group '{view_group_name}'. Check if you have permission.")
     
         with tabs[2]:  # Group Reports tab
             st.markdown("### Group Reports")
