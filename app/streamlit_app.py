@@ -21,7 +21,7 @@ from app.commands import (
     # Groups
     create_group, add_user_to_group, delete_group, add_group_expense,
     # Import/Export
-    import_expenses, export_csv,
+    import_expenses, export_csv, import_group_csv, export_group_csv,  # Add these imports
     # Reports
     report_top_expenses, report_category_spending, report_above_average_expenses, 
     report_monthly_category_spending, report_highest_spender_per_month,
@@ -117,10 +117,12 @@ def main():
                 display_admin_page()
             else:
                 st.error("You don't have permission to access the Admin page.")
+        # Modify the main() function to include the import/export page
+        # Find this section in main():
         elif st.session_state.get('current_page') == 'groups':
             display_groups_page()
         elif st.session_state.get('current_page') == 'import_export':
-            st.error("Import/Export page is not implemented yet.")
+            display_import_export_page()  # <-- Replace the error message with this function call
         else:
             display_dashboard()  # Default view
 
@@ -128,13 +130,20 @@ def main():
 def display_login():
     st.markdown('<p class="section-header">Login</p>', unsafe_allow_html=True)
     
-    col1, col2 = st.columns([1, 1])
+    # First add a centered welcome message
+    st.markdown('<div style="text-align: center;"><p class="info-text" style="font-size: 24px;">Welcome to the Expense Management System</p><p class="info-text">Please log in to continue.</p></div>', unsafe_allow_html=True)
     
-    with col1:
+    # Add some vertical spacing
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # Create columns to center the login form
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col2:
         with st.form("login_form"):
             username = st.text_input("Username")
             password = st.text_input("Password", type="password")
-            submit = st.form_submit_button("Login")
+            submit = st.form_submit_button("Login", use_container_width=True)
             
             if submit:
                 if login(username, password):
@@ -143,11 +152,6 @@ def display_login():
                     st.rerun()
                 else:
                     st.error("Invalid username or password")
-    
-    with col2:
-        st.markdown('<p class="info-text">Welcome to the Expense Management System. Please log in to continue.</p>', unsafe_allow_html=True)
-        st.image("https://img.freepik.com/free-vector/finance-financial-performance-concept-illustration_53876-40450.jpg", width=300)
-
 def logout_user():
     logout()
     sync_user_state()
@@ -831,69 +835,136 @@ def display_groups_page():
                     else:
                         st.error("Failed to add group expense.")
 
-# Import/Export Page
 def display_import_export_page():
-    st.markdown('<p class="section-header">Import/Export</p>', unsafe_allow_html=True)
+    st.markdown('<p class="section-header">Import/Export Data</p>', unsafe_allow_html=True)
     
-    tab1, tab2 = st.tabs(["Import Expenses", "Export Expenses"])
+    tab1, tab2 = st.tabs(["📤 Import Data", "📥 Export Data"])
     
     with tab1:
-        st.markdown("### Import Expenses from CSV")
+        st.markdown("### Import Expenses")
         
-        st.markdown("""
-        Upload a CSV file with the following columns:
-        - amount: Expense amount
-        - category: Category name
-        - payment_method: Payment method
-        - date: Date in YYYY-MM-DD format
-        - description (optional): Expense description
-        - tag (optional): Comma-separated tags
-        """)
+        # Individual Expenses Import
+        st.markdown("#### Individual Expenses")
+        st.info("Upload a CSV file containing individual expenses. The file should have columns: amount, category, payment_method, date, description (optional), and tags (optional).")
         
-        uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
-        
-        if uploaded_file is not None:
-            # Save the uploaded file to a temporary location
+        individual_file = st.file_uploader("Choose CSV file for individual expenses", 
+                                         type="csv", key="individual_import")
+        if individual_file:
             with tempfile.NamedTemporaryFile(delete=False, suffix='.csv') as tmp_file:
-                tmp_file.write(uploaded_file.read())
-                tmp_filepath = tmp_file.name
+                tmp_file.write(individual_file.getvalue())
+                tmp_path = tmp_file.name
             
-            if st.button("Import Expenses"):
-                success = import_expenses(tmp_filepath)
-                if success:
-                    st.success("Expenses imported successfully!")
-                else:
-                    st.error("Failed to import expenses. Check the file format.")
-                
-                # Clean up the temporary file
-                os.unlink(tmp_filepath)
+            if st.button("Import Individual Expenses"):
+                try:
+                    with st.spinner("Importing expenses..."):
+                        if import_expenses(tmp_path):
+                            st.success("Successfully imported individual expenses!")
+                            os.unlink(tmp_path)
+                        else:
+                            st.error("Failed to import individual expenses. Check file format.")
+                except Exception as e:
+                    st.error(f"Import error: {str(e)}")
+                    os.unlink(tmp_path)
+
+        # Group Expenses Import
+        st.markdown("#### Group Expenses")
+        st.info("Upload a CSV file containing group expenses. Make sure you have permissions for the selected group.")
+        
+        group_name_import = st.text_input("Group Name for Import")
+        group_file = st.file_uploader("Choose CSV file for group expenses", 
+                                    type="csv", key="group_import")
+        
+        if group_file and group_name_import:
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.csv') as tmp_file:
+                tmp_file.write(group_file.getvalue())
+                tmp_path = tmp_file.name
+            
+            if st.button("Import Group Expenses"):
+                try:
+                    with st.spinner("Importing group expenses..."):
+                        if import_group_csv(group_name_import, tmp_path):
+                            st.success(f"Successfully imported group expenses to {group_name_import}!")
+                            os.unlink(tmp_path)
+                        else:
+                            st.error("Failed to import group expenses. Check group permissions or file format.")
+                except Exception as e:
+                    st.error(f"Import error: {str(e)}")
+                    os.unlink(tmp_path)
     
     with tab2:
-        st.markdown("### Export Expenses to CSV")
+        st.markdown("### Export Expenses")
         
+        # Individual Expenses Export
+        st.markdown("#### Individual Expenses")
         col1, col2 = st.columns(2)
-        
         with col1:
-            export_path = st.text_input("Export File Path", "expenses_export.csv")
+            export_individual_path = st.text_input("File Name", "my_expenses.csv")
         
         with col2:
-            sort_field = st.selectbox("Sort By", 
-                ["date", "amount", "category", "payment_method", "tags"])
+            sort_field_individual = st.selectbox("Sort By", 
+                                           ["date", "amount", "category", "payment_method", "tags"],
+                                           key="individual_sort")
         
-        if st.button("Export Expenses"):
-            success = export_csv(export_path, sort_field)
-            if success:
-                st.success(f"Expenses exported to {export_path}!")
-                
-                with open(export_path, "r") as f:
-                    st.download_button(
-                        label="Download Exported CSV",
-                        data=f,
-                        file_name=os.path.basename(export_path),
-                        mime="text/csv"
-                    )
-            else:
-                st.error("Failed to export expenses.")
+        if st.button("Export Individual Expenses"):
+            try:
+                with st.spinner("Exporting expenses..."):
+                    # Create a temporary file
+                    with tempfile.NamedTemporaryFile(delete=False, suffix='.csv') as tmp_file:
+                        temp_path = tmp_file.name
+                        
+                    if export_csv(temp_path, sort_field_individual):
+                        with open(temp_path, "rb") as f:
+                            st.download_button(
+                                label="📥 Download Individual Expenses",
+                                data=f,
+                                file_name=export_individual_path,
+                                mime="text/csv",
+                                key="download_individual",
+                                help="Click to download your expenses data"
+                            )
+                        st.success("Individual expenses exported successfully!")
+                    else:
+                        st.error("Failed to export individual expenses.")
+            except Exception as e:
+                st.error(f"Export error: {str(e)}")
+
+        # Group Expenses Export
+        st.markdown("#### Group Expenses")
+        st.info("Export expenses for a specific group. You must be a member of the group.")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            group_name_export = st.text_input("Group Name for Export")
+        
+        with col2:
+            export_group_path = st.text_input("File Name for Group", "group_expenses.csv")
+        
+        sort_field_group = st.selectbox("Sort By", 
+                                      ["date", "amount", "category", "payment_method", "tags"],
+                                      key="group_sort")
+        
+        if st.button("Export Group Expenses") and group_name_export:
+            try:
+                with st.spinner("Exporting group expenses..."):
+                    # Create a temporary file
+                    with tempfile.NamedTemporaryFile(delete=False, suffix='.csv') as tmp_file:
+                        temp_path = tmp_file.name
+                    
+                    if export_group_csv(group_name_export, temp_path, sort_field_group):
+                        with open(temp_path, "rb") as f:
+                            st.download_button(
+                                label="📥 Download Group Expenses",
+                                data=f,
+                                file_name=export_group_path,
+                                mime="text/csv",
+                                key="download_group",
+                                help="Click to download group expenses data"
+                            )
+                        st.success(f"Group '{group_name_export}' expenses exported successfully!")
+                    else:
+                        st.error("Failed to export group expenses. Check group permissions.")
+            except Exception as e:
+                st.error(f"Export error: {str(e)}")
 
 if __name__ == "__main__":
     main()
