@@ -35,7 +35,7 @@ def initialize_db():
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS payment_methods (
         pid INTEGER PRIMARY KEY AUTOINCREMENT,
-        method TEXT CHECK(method IN ('Cash', 'Online')) NOT NULL
+        method TEXT NOT NULL
     )""")
 
     # Expenses table
