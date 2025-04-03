@@ -1677,3 +1677,43 @@ def import_group_csv(group_name, file_path):
     finally:
         if conn:
             conn.close()
+
+def update_group(group_name, field, new_value):
+    try:
+        conn = get_db_connection()
+
+        # Check if the group exists
+        group = conn.execute("SELECT gid FROM groups WHERE group_name = ?", (group_name,)).fetchone()
+        if not group:
+            print(f"Error: Group '{group_name}' does not exist.")
+            return False
+        
+        # Check if the user has permission to update this group
+        if not check_group_permissions(group_name):
+            return False
+        
+        # Validate the field to update
+        valid_fields = ['group_name', 'description']
+        if field not in valid_fields:
+            print(f"Error: Invalid field '{field}'. Valid fields are: {', '.join(valid_fields)}")
+            return False
+        
+        # If updating the group name, check if the new name already exists
+        if field == 'group_name' and group_name != new_value:
+            existing = conn.execute("SELECT 1 FROM groups WHERE group_name = ?", (new_value,)).fetchone()
+            if existing:
+                print(f"Error: A group with name '{new_value}' already exists.")
+                return False
+        
+        # Update the group
+        conn.execute(f"UPDATE groups SET {field} = ? WHERE group_name = ?", (new_value, group_name))
+        conn.commit()
+        
+        print(f"Group '{group_name}' updated successfully.")
+        return True
+        
+    except Exception as e:
+        print(f"Error updating group: {str(e)}")
+        return False
+    finally:
+        conn.close()
