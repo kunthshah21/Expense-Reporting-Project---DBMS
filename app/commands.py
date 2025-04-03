@@ -326,6 +326,11 @@ def list_expenses(filters=None):
 
 def add_tag(tag_name):
     try:
+        # Remove the admin role check to allow all logged-in users to create tags
+        if not current_user.get('uid'):
+            print("Error: User not logged in.")
+            return False
+            
         conn = get_db_connection()
         conn.execute("INSERT INTO tags (tag_name) VALUES (?)", (tag_name.strip().lower(),))
         conn.commit()

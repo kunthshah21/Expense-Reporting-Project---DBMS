@@ -359,7 +359,7 @@ def display_dashboard():
 def display_expenses_page():
     st.markdown('<p class="section-header">Expenses</p>', unsafe_allow_html=True)
     
-    tab1, tab2, tab3 = st.tabs(["List Expenses", "Add Expense", "Manage Expense"])
+    tab1, tab2, tab3, tab4 = st.tabs(["List Expenses", "Add Expense", "Manage Expense", "Manage Tags"])
     
     with tab1:
         st.markdown("### List Expenses")
@@ -489,6 +489,46 @@ def display_expenses_page():
                     st.success(f"Expense {expense_id} deleted successfully!")
                 else:
                     st.error("Failed to delete expense. Make sure you own this expense.")
+    
+    with tab4:
+        st.markdown("### Tag Management")
+        
+        # List existing tags
+        st.markdown("#### Existing Tags")
+        tags = list_tags()
+        tags_df = pd.DataFrame(tags)
+        st.dataframe(tags_df, use_container_width=True)
+        
+        # Add new tag
+        st.markdown("#### Add New Tag")
+        with st.form("add_user_tag_form"):
+            tag_name = st.text_input("Tag Name")
+            add_tag_button = st.form_submit_button("Add Tag")
+            
+            if add_tag_button:
+                if not tag_name:
+                    st.error("Tag name is required.")
+                else:
+                    success = add_tag(tag_name)
+                    if success:
+                        st.success(f"Tag '{tag_name}' added successfully!")
+                        st.rerun()
+                    else:
+                        st.error("Failed to add tag. It may already exist.")
+        
+        # Delete tag
+        st.markdown("#### Delete Tag")
+        with st.form("delete_user_tag_form"):
+            delete_tag_name = st.selectbox("Select Tag to Delete", [tag["tag_name"] for tag in tags])
+            delete_tag_button = st.form_submit_button("Delete Tag")
+            
+            if delete_tag_button:
+                success = delete_tag(delete_tag_name)
+                if success:
+                    st.success(f"Tag '{delete_tag_name}' deleted successfully!")
+                    st.rerun()
+                else:
+                    st.error("Failed to delete tag.")
 
 # Reports Page
 def display_reports_page():
