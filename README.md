@@ -6,9 +6,10 @@
 - [Project Structure](#project-structure)
 - [Setup and Installation](#setup-and-installation)
 - [Usage](#usage)
+- [ER](#Entity-Relationship-Diagrams)
 - [Queries](#queries)
 - [Contributers](#contributers)
-- [License](#license)
+
 
 ## Overview
 
@@ -145,6 +146,13 @@ list_expenses --amount=50-200 --payment-method=credit_card
 - Tags are comma-separated
 - Amount ranges use '-'
 ```
+
+
+## Entity Relationship Diagrams
+<img width="4768" alt="Untitled (14)" src="https://github.com/user-attachments/assets/9b0e9f25-ec38-4b5b-aabe-50376c78ba62" />
+<img width="2560" alt="Untitled (15)" src="https://github.com/user-attachments/assets/dfd68226-bef9-42f1-81df-e93c1ad2d596" />
+
+
 
 ## Queries
 
@@ -375,8 +383,8 @@ GROUP BY e.eid
 ```
 
 ## Contributers
-Aadit Shah
-Kalash Shah
-Maanya DN
-Nidhi
+Aadit Shah,
+Kalash Shah,
+Maanya DN,
+Nidhi,
 Kunth Shah
