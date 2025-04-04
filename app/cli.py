@@ -606,7 +606,7 @@ def show_help():
     list_payment_methods           - Show available payment methods
 
     [Expense Management]
-    add_expense <amount> <category> <payment_method> <YYYY-MM-DD> <description> [tags]
+    add_expense <amount> <category> <payment_method> <YYYY-MM-DD> <description> <comma-separated-tags>
                                   - Record new expense
     update_expense <id> <field> <value>
                                   - Modify expense (fields: amount, date, description, 
@@ -623,24 +623,27 @@ def show_help():
 
     [Group Management]
     add_group <name> <description> - Create new group
-    add_group_expense <amount> <group> <category> <payment> <date> <desc> <tags>|<users>
-                                  - Add group expense (tags comma-separated before |)
     add_user_to_group <user> <group> - Add member to group
         Group commands: 
     add_group <group_name> <description>
-    add_group_expense add_group_expense <amount> <group_name> <category> <payment_method> <date> <description> <comma-separated-tags> | <comma-separated-usernames>
+    add_group_expense <amount> <group_name> <category> <payment_method> <date> <description> <comma-separated-tags> | <comma-separated-usernames>
+          - Add group expense (tags comma-separated before | AND usernames comma-separated after | )
     
     Other Group Queries:
         list_groups
-        report_group_expenses <group_name> [--category=<category>] [--date=<date>] [--min-amount=<amount>] [--max-amount=<amount>] [--tag=<tag>] 
+        report_group_expenses <group_name>
+            --category=<category name>
+            --min-amount=<amount>
+            --max-amount=<amount>
+            --date=<date>
+            --tag=<tag>
         report_group_tag_usage
+          -For total use of each tags
         report_group_category_spending
+          -For total spending in each category
         report_group_user_expenses  
-        export_group_csv
-        import_group_csv
-
-    Import/Export:
-    import_expenses <file.csv>
+        export_group_csv <group_name> <file_path>, sort-on <field_name>
+        import_group_csv <group_name> <file_path>
 
     [Import/Export]
     import_expenses <file.csv>    - Bulk import from CSV

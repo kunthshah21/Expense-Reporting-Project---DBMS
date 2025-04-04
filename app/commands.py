@@ -48,7 +48,7 @@ def add_user(username, password, role):
         conn.commit()
         return True
     except sqlite3.IntegrityError:
-        print("Username already exists")
+        print("Username already exists or the Role does not exist")
         return False
     finally:
         conn.close()
@@ -119,8 +119,7 @@ def add_expense(amount, category, payment_method, date, description, tags):
         if not cid_result:
             print(f"Error: Category '{category}' not found.")
             return False
-
-        print(f"Category Result: {cid_result}")        
+       
         cid = cid_result[0]
         
         # Get payment method ID
@@ -132,8 +131,7 @@ def add_expense(amount, category, payment_method, date, description, tags):
         if not pid_result:
             print(f"Error: Payment method '{payment_method}' not found.")
             return False
-        
-        print(f"Payment Method Result: {pid_result}")       
+          
         pid = pid_result[0]
 
         # Insert expense

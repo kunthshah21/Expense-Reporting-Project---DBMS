@@ -383,8 +383,8 @@ GROUP BY e.eid
 ```
 
 ## Contributers
+Kunth Shah,
 Aadit Shah,
-Kalash Shah,
 Maanya DN,
 Nidhi,
-Kunth Shah
+Kalash Shah
