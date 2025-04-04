@@ -7,7 +7,7 @@
 - [Setup and Installation](#setup-and-installation)
 - [Usage](#usage)
 - [Queries](#queries)
-- [Contributing](#contributing)
+- [Contributers](#contributers)
 - [License](#license)
 
 ## Overview
@@ -374,5 +374,9 @@ WHERE e.uid = ?
 GROUP BY e.eid
 ```
 
-## Contributing
-// ...existing code...
+## Contributers
+Aadit Shah
+Kalash Shah
+Maanya DN
+Nidhi
+Kunth Shah
