@@ -130,11 +130,10 @@ def initialize_db():
         FOREIGN KEY(geid) REFERENCES group_expenses(geid) ON DELETE RESTRICT
     )""")
 
-    # Create default admin
     try:
         cursor.execute("""
         INSERT INTO users (username, password, role)
-        VALUES ('admin', 'admin123', 'Admin')
+        VALUES ('admin', 'csit222', 'Admin')
         """)
     except sqlite3.IntegrityError:
         pass
