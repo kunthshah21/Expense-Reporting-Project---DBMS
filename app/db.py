@@ -133,7 +133,7 @@ def initialize_db():
     try:
         cursor.execute("""
         INSERT INTO users (username, password, role)
-        VALUES ('admin', 'csit222', 'Admin')
+        VALUES ('admin', 'admin123', 'Admin')
         """)
     except sqlite3.IntegrityError:
         pass

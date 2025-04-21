@@ -81,7 +81,7 @@ Below is an overview of the project structure along with a description of what e
 ### Expense Management System - Available Commands
 ```
 [Authentication]
-login <username> <password>    - Authenticate user (default Admin: admin csit222)
+login <username> <password>    - Authenticate user (default Admin: admin admin123)
 logout                         - End current session
 
 [User Management (Admin only)]
