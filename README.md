@@ -1,6 +1,9 @@
 # Expense Reporting Project - DBMS
  This is a DBMS project which deals with building a Expense reporting tool with a logic overview built in python and SQL as the backend
 
+ # Front End App Screenshot
+ [APP Screenshot]
+
 ## Table of Contents
 - [Overview](#overview)
 - [Project Structure](#project-structure)
