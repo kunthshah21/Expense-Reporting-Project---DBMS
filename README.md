@@ -2,7 +2,8 @@
  This is a DBMS project which deals with building a Expense reporting tool with a logic overview built in python and SQL as the backend
 
  # Front End App Screenshot
- [APP Screenshot]
+<img width="1726" alt="Screenshot 2025-04-29 at 4 07 59 PM" src="https://github.com/user-attachments/assets/ecbbe9bc-dbb9-420e-a82d-4e23e16ed769" />
+
 
 ## Table of Contents
 - [Overview](#overview)
